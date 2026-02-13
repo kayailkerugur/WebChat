@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="tr">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Kişi Ekle</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+            max-width: 520px;
+            margin: 40px auto;
+            padding: 0 16px;
+        }
+
+        .card {
+            border: 1px solid #eee;
+            border-radius: 14px;
+            padding: 16px;
+        }
+
+        label {
+            display: block;
+            font-weight: 700;
+            margin: 10px 0 6px;
+        }
+
+        input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+        }
+
+        button {
+            margin-top: 12px;
+            padding: 10px 12px;
+            border: 0;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+
+        .row {
+            display: flex;
+            gap: 8px;
+        }
+
+        .row button {
+            flex: 1;
+        }
+
+        .primary {
+            background: #0aa64b;
+            color: #fff;
+        }
+
+        .danger {
+            background: #ff3b30;
+            color: #fff;
+        }
+
+        ul {
+            padding-left: 18px;
+        }
+
+        li {
+            margin: 6px 0;
+        }
+
+        .muted {
+            opacity: .7;
+            font-size: 12px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Kişi Ekle</h1>
+    <p class="muted">Bu sayfa şimdilik kişileri localStorage'a kaydeder. Widget buradan okur.</p>
+
+    <div class="card">
+        <label>Id (zorunlu, benzersiz)</label>
+        <input id="pid" placeholder="u123" />
+
+        <label>Ad Soyad</label>
+        <input id="pname" placeholder="Ahmet Yılmaz" />
+
+        <label>Durum</label>
+        <input id="pstatus" placeholder="Çevrimiçi / Son görülme..." />
+
+        <div class="row">
+            <button class="primary" id="add">Ekle</button>
+            <button class="danger" id="clear">Hepsini Sil</button>
+        </div>
+    </div>
+
+    <h3>Mevcut kişiler</h3>
+    <ul id="list"></ul>
+
+    <script>
+        const KEY = "cw_people";
+
+        function load() {
+            return JSON.parse(localStorage.getItem(KEY) || "[]");
+        }
+        function save(arr) {
+            localStorage.setItem(KEY, JSON.stringify(arr));
+        }
+        function render() {
+            const ul = document.getElementById("list");
+            const arr = load();
+            ul.innerHTML = arr.map(p => `<li><b>${p.name}</b> (${p.id}) — ${p.status || ""}</li>`).join("");
+        }
+
+        document.getElementById("add").addEventListener("click", () => {
+            const id = document.getElementById("pid").value.trim();
+            const name = document.getElementById("pname").value.trim();
+            const status = document.getElementById("pstatus").value.trim();
+
+            if (!id || !name) return alert("id ve name zorunlu");
+
+            const arr = load();
+            if (arr.some(x => x.id === id)) return alert("Bu id zaten var");
+
+            arr.push({ id, name, status, preview: "" });
+            save(arr);
+            render();
+
+            document.getElementById("pid").value = "";
+            document.getElementById("pname").value = "";
+            document.getElementById("pstatus").value = "";
+        });
+
+        document.getElementById("clear").addEventListener("click", () => {
+            if (!confirm("Hepsi silinsin mi?")) return;
+            save([]);
+            render();
+        });
+
+        render();
+    </script>
+</body>
+
+</html>

@@ -15,6 +15,7 @@ const env = {
   messageHistoryLimit: parseInt(process.env.MESSAGE_HISTORY_LIMIT) || 50,
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 10000,
   rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX) || 20,
+  databaseUrl: required("DATABASE_URL"),
 };
 
 module.exports = env;

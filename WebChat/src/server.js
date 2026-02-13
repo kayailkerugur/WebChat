@@ -18,6 +18,10 @@ const { appendMessage } = require("./services/message.service");
 
 const crypto = require("crypto");
 
+const { healthcheck } = require("./db/db");
+
+const { pool } = require("./db/db");
+
 const io = new Server(server, {
   cors: {
     origin: env.corsOrigin,
@@ -30,131 +34,229 @@ const typingLastSent = new Map();
 io.use(socketAuthMiddleware);
 
 io.on("connection", (socket) => {
-  const user = socket.data.user;
-  console.log("✅ Connected:", user);
+  // ✅ Normalize user (JWT payload: { userId, username })
+  const u = socket.data.user || {};
+  const userId = u.userId || u.id;        
+  const username = u.username;
 
+  if (!userId || !username) {
+    console.error("❌ Invalid socket user payload:", u);
+    socket.emit("error", { code: "AUTH", message: "invalid user payload" });
+    socket.disconnect(true);
+    return;
+  }
+
+  console.log("✅ Connected:", { userId, username });
+
+  // -------------------------
+  // ROOM EVENTS (opsiyonel)
+  // -------------------------
   socket.on("room:join", ({ roomId }) => {
     if (!roomId) return socket.emit("error", { code: "VALIDATION", message: "roomId is required" });
 
     socket.join(roomId);
 
-    const users = joinRoom(roomId, user);
+    const presenceUser = { userId, username };
+    const users = joinRoom(roomId, presenceUser);
     const history = getRoomHistory(roomId);
 
     socket.emit("room:state", { roomId, users, history });
-
-    socket.to(roomId).emit("room:user-joined", { roomId, user });
+    socket.to(roomId).emit("room:user-joined", { roomId, user: presenceUser });
   });
 
   socket.on("room:leave", ({ roomId }) => {
     if (!roomId) return;
 
     socket.leave(roomId);
-    leaveRoom(roomId, user.id);
+    leaveRoom(roomId, userId);
 
-    socket.to(roomId).emit("room:user-left", { roomId, userId: user.id });
+    socket.to(roomId).emit("room:user-left", { roomId, userId });
   });
 
-  socket.on("disconnect", () => {
-    console.log("❌ Disconnected:", user);
+  // -------------------------
+  // DM OPEN (DB + history)
+  // -------------------------
+  socket.on("dm:open", async ({ peerId }) => {
+    const u = socket.data.user || {};
+    const myId = u.userId || u.id;
+    const myUsername = u.username;
 
-    const leftRooms = removeUserFromAllRooms(user.id);
+    console.log("🔥 dm:open", { from: myUsername, myId, peerId });
 
-    typingLastSent.clear();
-    
-    for (const roomId of leftRooms) {
-      socket.to(roomId).emit("typing", {
-        roomId,
-        userId: user.id,
-        username: user.username,
-        isTyping: false
+    if (!myId) {
+      return socket.emit("error", { code: "AUTH", message: "missing myId in token" });
+    }
+    if (!peerId) {
+      return socket.emit("error", { code: "VALIDATION", message: "peerId required" });
+    }
+    if (peerId === myId) {
+      return socket.emit("error", { code: "VALIDATION", message: "cannot DM yourself" });
+    }
+
+    const key = dmKey(myId, peerId);
+
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+
+      const peerCheck = await client.query(`select id, username from users where id=$1`, [peerId]);
+      if (!peerCheck.rowCount) {
+        await client.query("rollback");
+        return socket.emit("error", { code: "NOT_FOUND", message: "peer user not found" });
+      }
+
+      const q = await client.query(`select id from conversations where dm_key=$1`, [key]);
+      let conversationId = q.rows[0]?.id;
+
+      if (!conversationId) {
+        const ins = await client.query(
+          `insert into conversations (type, dm_key)
+         values ('DM', $1)
+         returning id`,
+          [key]
+        );
+        conversationId = ins.rows[0].id;
+
+        await client.query(
+          `insert into conversation_members (conversation_id, user_id)
+         values ($1,$2),($1,$3)`,
+          [conversationId, myId, peerId]
+        );
+      }
+
+      const hist = await client.query(
+        `select m.id, m.body, m.sent_at,
+              u.id as sender_id, u.username
+       from messages m
+       join users u on u.id = m.sender_id
+       where m.conversation_id = $1
+       order by m.sent_at asc
+       limit 50`,
+        [conversationId]
+      );
+
+      await client.query("commit");
+
+      socket.join(conversationId);
+
+      socket.emit("dm:state", {
+        conversationId,
+        history: hist.rows.map(r => ({
+          id: r.id,
+          text: r.body,
+          sentAt: r.sent_at,
+          from: { userId: r.sender_id, username: r.username }
+        }))
       });
-    }
-  });
 
-  socket.on("connect", () => {
-    console.log("Connected:", socket.id);
-    socket.emit("room:join", { roomId: "room-1" });
-  });
+      console.log("🔥 dm:state OK", { conversationId });
 
-  socket.on("room:state", (data) => console.log("room:state", data));
-  socket.on("room:user-joined", (data) => console.log("joined", data));
-  socket.on("room:user-left", (data) => console.log("left", data));
-  socket.on("error", (e) => console.log("ERR:", e));
-
-  socket.on("message:send", ({ roomId, text }) => {
-    if (!roomId || !text) {
-      return socket.emit("error", {
-        code: "VALIDATION",
-        message: "roomId and text required"
+    } catch (e) {
+      await client.query("rollback");
+      console.error("❌ dm:open error:", {
+        code: e.code,
+        message: e.message,
+        detail: e.detail
       });
+
+      socket.emit("error", {
+        code: "SERVER",
+        message: "dm:open failed"
+      });
+    } finally {
+      client.release();
+    }
+  });
+
+  // -------------------------
+  // MESSAGE SEND (conversationId)
+  // -------------------------
+  socket.on("message:send", async ({ conversationId, text }) => {
+    if (!conversationId || !text?.trim()) {
+      return socket.emit("error", { code: "VALIDATION", message: "conversationId and text required" });
     }
 
-    const message = {
-      id: crypto.randomUUID(),
-      roomId,
-      from: socket.data.user,
-      text: text.trim(),
-      sentAt: new Date().toISOString()
-    };
+    try {
+      // üyelik kontrolü
+      const mem = await pool.query(
+        `select 1 from conversation_members where conversation_id=$1 and user_id=$2`,
+        [conversationId, userId]
+      );
+      if (!mem.rowCount) {
+        return socket.emit("error", { code: "FORBIDDEN", message: "not a member" });
+      }
 
-    appendMessage(roomId, message);
+      const ins = await pool.query(
+        `insert into messages (conversation_id, sender_id, body)
+         values ($1,$2,$3)
+         returning id, sent_at`,
+        [conversationId, userId, text.trim()]
+      );
 
-    io.to(roomId).emit("message:new", { roomId, message });
-  });
+      const message = {
+        id: ins.rows[0].id,
+        conversationId,
+        text: text.trim(),
+        sentAt: ins.rows[0].sent_at,
+        from: { userId, username }
+      };
 
-  socket.on("message:new", (data) => {
-    const msg = data.message;
-    const li = document.createElement("li");
-    li.textContent = `${msg.from.username}: ${msg.text}`;
-    messagesList.appendChild(li);
-  });
+      io.to(conversationId).emit("message:new", { conversationId, message });
 
-  socket.on("room:state", (data) => {
-    log("room:state", data);
-    renderUsers(data.users || []);
-    enableInRoomUI(true);
-
-    messagesList.innerHTML = "";
-    (data.history || []).forEach(msg => {
-      const li = document.createElement("li");
-      li.textContent = `${msg.from.username}: ${msg.text}`;
-      messagesList.appendChild(li);
-    });
-  });
-
-  socket.on("typing:start", ({ roomId }) => {
-    if (!roomId) return;
-
-    if (!socket.rooms.has(roomId)) {
-      return socket.emit("error", { code: "NOT_IN_ROOM", message: "Join room first" });
+    } catch (e) {
+      console.error("❌ message:send error:", e);
+      socket.emit("error", { code: "SERVER", message: "message:send failed" });
     }
+  });
 
-    if (!canSendTyping(roomId)) return;
+  socket.on("typing:start", ({ conversationId }) => {
+    if (!conversationId) return;
+    if (!socket.rooms.has(conversationId)) return;
+    if (!canSendTyping(conversationId)) return;
 
-    socket.to(roomId).emit("typing", {
-      roomId,
-      userId: socket.data.user.id,
-      username: socket.data.user.username,
+    socket.to(conversationId).emit("typing", {
+      conversationId,
+      userId,
+      username,
       isTyping: true
     });
   });
 
-  socket.on("typing:stop", ({ roomId }) => {
-    if (!roomId) return;
+  socket.on("typing:stop", ({ conversationId }) => {
+    if (!conversationId) return;
+    if (!socket.rooms.has(conversationId)) return;
+    if (!canSendTyping(conversationId)) return;
 
-    if (!socket.rooms.has(roomId)) return;
-
-    if (!canSendTyping(roomId)) return;
-
-    socket.to(roomId).emit("typing", {
-      roomId,
-      userId: socket.data.user.id,
-      username: socket.data.user.username,
+    socket.to(conversationId).emit("typing", {
+      conversationId,
+      userId,
+      username,
       isTyping: false
     });
   });
+
+  socket.on("disconnect", () => {
+    console.log("❌ Disconnected:", { userId, username });
+
+    // Eğer presence servislerin room bazlı çalışıyorsa:
+    const leftRooms = removeUserFromAllRooms(userId);
+
+    for (const roomId of leftRooms) {
+      socket.to(roomId).emit("typing", {
+        roomId,
+        userId,
+        username,
+        isTyping: false
+      });
+    }
+  });
 });
+
+function dmKey(a, b) {
+  const [x, y] = [a, b].sort();
+  return `dm:${x}:${y}`;
+}
+
 
 app.use(cors({
   origin: [
@@ -197,8 +299,6 @@ server.listen(env.port, () => {
   console.log(`🚀 Server running on port ${env.port}`);
 });
 
-module.exports = { io };
-
 function canSendTyping(roomId) {
   const key = roomId;
   const now = Date.now();
@@ -209,3 +309,18 @@ function canSendTyping(roomId) {
   typingLastSent.set(key, now);
   return true;
 }
+
+app.get("/health/db", async (req, res) => {
+  try {
+    const ok = await healthcheck();
+    res.json({ ok });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.use("/auth", require("./routes/auth.routes"));
+
+app.use("/", require("./routes/users.routes"));
+
+module.exports = { io };

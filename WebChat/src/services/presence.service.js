@@ -6,9 +6,15 @@ function ensureRoom(roomId) {
   return rooms.get(roomId);
 }
 
+function norm(user) {
+  const id = user.userId || user.id;
+  return { id, username: user.username };
+}
+
 function joinRoom(roomId, user) {
   const roomUsers = ensureRoom(roomId);
-  roomUsers.set(user.id, { id: user.id, username: user.username });
+  const u = norm(user);
+  roomUsers.set(u.id, { id: u.id, username: u.username });
   return Array.from(roomUsers.values());
 }
 
@@ -39,9 +45,4 @@ function removeUserFromAllRooms(userId) {
   return leftRooms;
 }
 
-module.exports = {
-  joinRoom,
-  leaveRoom,
-  listUsers,
-  removeUserFromAllRooms,
-};
+module.exports = { joinRoom, leaveRoom, listUsers, removeUserFromAllRooms };

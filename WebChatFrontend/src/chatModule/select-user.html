@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dev Kullanıcı Seç</title>
+  <style>
+    body{
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      max-width: 520px;
+      margin: 48px auto;
+      padding: 0 16px;
+    }
+    .card{
+      border: 1px solid #eee;
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 6px 18px rgba(0,0,0,.06);
+    }
+    h1{ margin: 0 0 8px; }
+    .muted{ opacity: .7; font-size: 12px; margin: 0 0 16px; }
+    label{ display:block; font-weight: 700; margin: 10px 0 6px; }
+    input{
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      outline: none;
+      font-size: 14px;
+    }
+    .row{ display:flex; gap: 10px; margin-top: 12px; }
+    button{
+      flex: 1;
+      padding: 10px 12px;
+      border: 0;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+    .primary{ background:#0aa64b; color:#fff; }
+    .secondary{ background:#111; color:#fff; }
+    .danger{ background:#ff3b30; color:#fff; }
+    pre{
+      background:#0b0b0b;
+      color:#d7ffd7;
+      padding: 12px;
+      border-radius: 12px;
+      overflow:auto;
+      font-size: 12px;
+      margin-top: 14px;
+      display:none;
+    }
+  </style>
+</head>
+<body>
+  <h1>Dev: Authenticated Kullanıcı Seç</h1>
+  <p class="muted">
+    Username gir → backend <code>/auth/dev-login</code> → JWT localStorage’a kaydedilir → <code>index.html</code>’e dönülür.
+  </p>
+
+  <div class="card">
+    <label>Username</label>
+    <input id="username" placeholder="ör: kaya, ahmet, elif" autocomplete="off" />
+
+    <div class="row">
+      <button class="primary" id="loginBtn">Giriş Yap</button>
+      <button class="secondary" id="goIndexBtn" type="button">Index’e Git</button>
+    </div>
+
+    <div class="row">
+      <button class="danger" id="clearBtn" type="button">LocalStorage Temizle</button>
+    </div>
+
+    <pre id="out"></pre>
+  </div>
+
+  <script>
+    const API_BASE = "http://localhost:3000";
+    const out = document.getElementById("out");
+
+    function show(obj) {
+      out.style.display = "block";
+      out.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+    }
+
+    async function devLogin(username) {
+      const res = await fetch(`${API_BASE}/auth/dev-login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.message || "dev-login failed");
+      }
+      return data; // { token, user }
+    }
+
+    document.getElementById("loginBtn").addEventListener("click", async () => {
+      const username = document.getElementById("username").value.trim();
+      if (!username) return alert("username gir");
+
+      try {
+        const data = await devLogin(username);
+
+        // ✅ Widget’ın kullanacağı anahtarlar
+        localStorage.setItem("jwt_token", data.token);
+        localStorage.setItem("me_user", JSON.stringify(data.user));
+
+        console.log("LOGIN RESPONSE:", data);
+        console.log("TOKEN:", data.token);
+
+        show({ ok: true, saved: { jwt_token: true, me_user: data.user } });
+
+        window.location.href = "../main/index.html";
+      } catch (e) {
+        show(String(e));
+      }
+    });
+
+    document.getElementById("goIndexBtn").addEventListener("click", () => {
+      window.location.href = "./index.html";
+    });
+
+    document.getElementById("clearBtn").addEventListener("click", () => {
+      localStorage.removeItem("jwt_token");
+      localStorage.removeItem("me_user");
+      show("LocalStorage temizlendi: jwt_token, me_user");
+    });
+
+    const existing = localStorage.getItem("me_user");
+    if (existing) {
+      try { show({ current: JSON.parse(existing) }); } catch {}
+    }
+  </script>
+</body>
+</html>

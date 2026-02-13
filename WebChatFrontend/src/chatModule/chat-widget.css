@@ -176,16 +176,22 @@
     border-radius: 14px;
     margin: 8px 0;
     font-size: 14px;
+    line-height: 1.4;
+    word-wrap: break-word;
 }
 
+/* Benim mesajım */
 .cw-msg.me {
     background: #dcf8c6;
     margin-left: auto;
+    color: #1a1a1a;   /* ✅ koyu yazı */
 }
 
+/* Karşı taraf */
 .cw-msg.them {
     background: #fff;
     border: 1px solid #eee;
+    color: #222;      /* ✅ koyu yazı */
 }
 
 /* Input */

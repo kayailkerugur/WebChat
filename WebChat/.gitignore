@@ -1,0 +1,26 @@
+# node modules
+node_modules/
+
+# environment variables
+.env
+
+# logs
+logs
+*.log
+
+# macOS
+.DS_Store
+
+# build / dist
+dist/
+build/
+
+# coverage
+coverage/
+
+# IDE
+.vscode/
+.idea/
+
+# npm
+package-lock.json

@@ -1,0 +1,71 @@
+body {
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    padding: 16px;
+}
+
+.row {
+    display: flex;
+    gap: 8px;
+    margin: 8px 0;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+input {
+    padding: 8px;
+    min-width: 280px;
+}
+
+button {
+    padding: 8px 12px;
+    cursor: pointer;
+}
+
+#status {
+    padding: 8px 10px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    display: inline-block;
+}
+
+.cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 12px;
+}
+
+.card {
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    padding: 12px;
+}
+
+ul {
+    margin: 8px 0 0;
+    padding-left: 18px;
+}
+
+pre {
+    background: #f6f6f6;
+    padding: 10px;
+    border-radius: 10px;
+    overflow: auto;
+    max-height: 260px;
+}
+
+.small {
+    color: #666;
+    font-size: 12px;
+}
+
+#tokenInput {
+  pointer-events: auto !important;
+  user-select: text !important;
+  position: relative;
+  z-index: 9999;
+}
+
+.card, .row, body {
+  pointer-events: auto;
+}

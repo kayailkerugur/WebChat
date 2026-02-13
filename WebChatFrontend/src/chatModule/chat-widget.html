@@ -1,0 +1,56 @@
+<!--Floating Chat Widget-->
+<div class="chat-widget" id="chatWidget">
+    <div class="cw" id="cw">
+        <button class="cw-fab" id="cwFab" aria-label="Mesajlar">💬</button>
+
+        <div class="cw-panel" id="cwPeople" aria-hidden="true">
+            <div class="cw-header">
+                <div class="cw-title">Mesajlar</div>
+                <button class="cw-x" id="cwClosePeople" aria-label="Kapat">✕</button>
+            </div>
+
+            <div class="cw-search">
+                <input id="cwSearch" type="text" placeholder="Kişi ara..." autocomplete="off" />
+            </div>
+
+            <div class="cw-list" id="cwList">
+
+            </div>
+        </div>
+
+        <!-- Chat screen -->
+        <div class="cw-panel" id="cwChat" aria-hidden="true">
+            <div class="cw-header">
+                <div class="cw-left">
+                    <button class="cw-back" id="cwBack" aria-label="Geri">‹</button>
+                    <div class="cw-avatar" id="cwAvatar">A</div>
+                    <div>
+                        <div class="cw-name" id="cwName">Kişi</div>
+                        <div class="cw-sub" id="cwSub">Çevrimiçi</div>
+                    </div>
+                </div>
+                <button class="cw-x" id="cwCloseChat" aria-label="Kapat">✕</button>
+            </div>
+
+            <div class="cw-messages" id="cwMessages"></div>
+
+            <form class="cw-input" id="cwForm">
+                <input id="cwText" type="text" placeholder="Mesaj yaz..." autocomplete="off" />
+                <button type="submit">➤</button>
+            </form>
+        </div>
+    </div>
+    
+</div>
+
+<link rel="stylesheet" href="../chatModule/chat-widget.css">
+
+<!-- 
+<div id="chat-container"></div>
+
+fetch("../chatModule/chat-widget.html")
+            .then(r => r.text())
+            .then(html => {
+                document.getElementById("chat-container").innerHTML = html;
+                initChatWidget();
+            }); -->

@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hash & Encode Lab</title>
+    <link rel="stylesheet" href="./styles.css" />
+</head>
+
+<body>
+    <div class="bg">
+        <div class="grid"></div>
+        <div class="glow glow-1"></div>
+        <div class="glow glow-2"></div>
+    </div>
+
+    <main class="wrap">
+        <header class="top">
+            <div class="brand">
+                <div class="logo" aria-hidden="true">#</div>
+                <div class="brand-text">
+                    <h1>Hash & Encode Lab</h1>
+                    <p>Vanilla JS ile SHA-256 / MD5 / Base64 araç seti</p>
+                </div>
+            </div>
+        </header>
+
+        <section class="card input-card">
+            <div class="card-head">
+                <h2>Girdi</h2>
+                <div class="actions">
+                    <button class="btn ghost" id="btnClear" type="button">Temizle</button>
+                    <button class="btn ghost" id="btnPaste" type="button">Yapıştır</button>
+                </div>
+            </div>
+
+            <label class="field">
+                <span class="label">Metin / Veri</span>
+                <textarea id="inputText" class="textarea" rows="7"
+                    placeholder="Buraya metni yaz… (örn: merhaba dünya)"></textarea>
+            </label>
+
+            <div class="toolbar">
+                <div class="segmented" role="group" aria-label="İşlem seçimi">
+                    <button class="seg active" id="tabHash" type="button" data-tab="hash">Hash</button>
+                    <button class="seg" id="tabBase64" type="button" data-tab="base64">Base64</button>
+                </div>
+
+                <div class="hint">
+                    <span class="dot"></span>
+                    <span id="hintText">Hash üretmek için bir algoritma seç.</span>
+                </div>
+            </div>
+
+            <!-- HASH PANEL -->
+            <div class="panel" id="panelHash" data-panel="hash">
+                <div class="btn-row">
+                    <button class="btn primary" id="btnSHA256" type="button">SHA-256 Üret</button>
+                    <button class="btn" id="btnMD5" type="button">MD5 Üret</button>
+                </div>
+
+                <div class="options">
+                    <label class="check">
+                        <input id="optUppercase" type="checkbox" />
+                        <span>Çıktıyı BÜYÜK HARF yap</span>
+                    </label>
+
+                    <label class="check">
+                        <input id="optTrim" type="checkbox" checked />
+                        <span>Baş/son boşlukları kırp</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- BASE64 PANEL -->
+            <div class="panel hidden" id="panelBase64" data-panel="base64">
+                <div class="btn-row">
+                    <button class="btn primary" id="btnB64Encode" type="button">Base64 Encode</button>
+                    <button class="btn" id="btnB64Decode" type="button">Base64 Decode</button>
+                </div>
+
+                <div class="options">
+                    <label class="check">
+                        <input id="optUrlSafe" type="checkbox" />
+                        <span>URL-safe (- ve _)</span>
+                    </label>
+
+                    <label class="check">
+                        <input id="optNoPadding" type="checkbox" />
+                        <span>= padding kaldır</span>
+                    </label>
+                </div>
+            </div>
+        </section>
+
+        <section class="card output-card">
+            <div class="card-head">
+                <h2>Çıktı</h2>
+                <div class="actions">
+                    <button class="btn ghost" id="btnCopyAll" type="button">Hepsini Kopyala</button>
+                </div>
+            </div>
+
+            <div class="outputs">
+                <div class="out">
+                    <div class="out-head">
+                        <span class="tag">SHA-256</span>
+                        <button class="icon-btn" id="btnCopySHA256" type="button" title="Kopyala">
+                            <span aria-hidden="true">⧉</span>
+                        </button>
+                    </div>
+                    <textarea id="outSHA256" class="outbox" rows="3" readonly
+                        placeholder="SHA-256 burada görünecek…"></textarea>
+                </div>
+
+                <div class="out">
+                    <div class="out-head">
+                        <span class="tag">MD5</span>
+                        <button class="icon-btn" id="btnCopyMD5" type="button" title="Kopyala">
+                            <span aria-hidden="true">⧉</span>
+                        </button>
+                    </div>
+                    <textarea id="outMD5" class="outbox" rows="2" readonly
+                        placeholder="MD5 burada görünecek…"></textarea>
+                </div>
+
+                <div class="out">
+                    <div class="out-head">
+                        <span class="tag">Base64</span>
+                        <button class="icon-btn" id="btnCopyB64" type="button" title="Kopyala">
+                            <span aria-hidden="true">⧉</span>
+                        </button>
+                    </div>
+                    <textarea id="outB64" class="outbox" rows="3" readonly
+                        placeholder="Base64 encode/decode çıktısı…"></textarea>
+                </div>
+            </div>
+
+            <div class="statusbar">
+                <div class="status" id="statusText">Hazır.</div>
+                <div class="len">
+                    <span class="mini">Len:</span>
+                    <span class="mono" id="lenText">0</span>
+                </div>
+            </div>
+        </section>
+
+        <div class="ghCard">
+            <div class="ghHeader">
+                <div class="ghLeft">
+                    <span class="ghPill">
+                        <svg class="ghIcon" viewBox="0 0 16 16" aria-hidden="true">
+                            <path fill="currentColor"
+                                d="M8 0C3.58 0 0 3.73 0 8.33c0 3.68 2.29 6.8 5.47 7.9.4.08.55-.18.55-.4 0-.2-.01-.86-.01-1.56-2.01.45-2.53-.51-2.69-.99-.09-.24-.48-.99-.82-1.19-.28-.16-.68-.55-.01-.56.63-.01 1.08.6 1.23.85.72 1.27 1.87.91 2.33.69.07-.54.28-.91.51-1.12-1.78-.21-3.64-.92-3.64-4.08 0-.9.31-1.64.82-2.22-.08-.21-.36-1.05.08-2.18 0 0 .67-.22 2.2.85.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.07 2.2-.85 2.2-.85.44 1.13.16 1.97.08 2.18.51.58.82 1.32.82 2.22 0 3.17-1.87 3.87-3.65 4.08.29.26.54.77.54 1.56 0 1.12-.01 2.02-.01 2.3 0 .22.15.49.55.4C13.71 15.13 16 12 16 8.33 16 3.73 12.42 0 8 0z" />
+                        </svg>
+                        GitHub
+                    </span>
+
+                    <div class="ghText">
+                        <div class="ghRepo" id="ghRepoLabel">USER / REPO</div>
+                        <div class="ghSub">Detay sayfası + raw içerik için hızlı erişim</div>
+                    </div>
+                </div>
+
+                <div class="ghActions">
+                    <a class="ghBtn" id="ghDetails" href="https://github.com/kayailkerugur" target="_blank"
+                        rel="noreferrer">Geliştirici</a>
+                    <a class="ghBtn ghPrimary" id="ghOpen" href="https://github.com/kayailkerugur/HashEncodeLab.git"
+                        target="_blank" rel="noreferrer">Repo’ya Git</a>
+                </div>
+            </div>
+        </div>
+
+        <div id="chat-container"></div>
+    </main>
+
+    <!-- Toast -->
+    <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true">
+        <span id="toastText">Kopyalandı!</span>
+    </div>
+    <script type="module" src="app.js"></script>
+    <script>
+        fetch("../chatModule/chat-widget.html")
+            .then(r => r.text())
+            .then(html => {
+                document.getElementById("chat-container").innerHTML = html;
+                initChatWidget();
+            });
+    </script>
+
+    <script src="../chatModule/chat-widget.js"></script>
+</body>
+
+</html>

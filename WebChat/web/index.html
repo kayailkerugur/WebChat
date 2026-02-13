@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WebChat Test Client</title>
+  <link rel="stylesheet" href="./index.css" />
+</head>
+
+<body>
+  <h2>WebChat Test Client</h2>
+
+  <div class="row">
+    <div id="status">Status: <b id="statusText">DISCONNECTED</b></div>
+    <span class="small">Aynı HTML’i iki sekmede açıp farklı token ile bağlanabilirsin.</span>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <label>Server URL</label>
+      <input id="serverUrl" value="http://localhost:3000" />
+    </div>
+
+    <div class="row">
+      <label>Token</label>
+      <input id="tokenInput" placeholder="JWT token yapıştır (Bearer yazma)" />
+    </div>
+
+    <div class="row">
+      <button id="connectBtn">Connect</button>
+      <button id="disconnectBtn" disabled>Disconnect</button>
+    </div>
+
+    <hr />
+
+    <div class="row">
+      <label>Room ID</label>
+      <input id="roomInput" value="room-1" />
+      <button id="joinBtn" disabled>Join</button>
+      <button id="leaveBtn" disabled>Leave</button>
+    </div>
+  </div>
+
+  <div class="cols">
+    <div class="card">
+      <h3>Online Users</h3>
+      <ul id="users"></ul>
+    </div>
+
+    <div class="card">
+      <h3>Events Log</h3>
+      <pre id="log"></pre>
+    </div>
+  </div>
+
+  <hr /> 
+
+  <div class="card">
+    <h3>Messages</h3>
+    <div class="row">
+      <input id="messageInput" placeholder="Mesaj yaz..." />
+      <button id="sendBtn" disabled>Send</button>
+    </div>
+    <div id="typingIndicator" class="small"></div>
+    <ul id="messages"></ul>
+  </div>
+
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="index.js"></script>
+</body>
+
+</html>

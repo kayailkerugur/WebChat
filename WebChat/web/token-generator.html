@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>JWT Token Generator (DEV)</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; padding: 16px; max-width: 900px; margin: 0 auto; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 14px; margin-top: 12px; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; align-items: center; }
+    label { min-width: 110px; }
+    input, select { padding: 8px; min-width: 280px; }
+    button { padding: 8px 12px; cursor: pointer; }
+    pre { background: #f6f6f6; padding: 10px; border-radius: 10px; overflow: auto; }
+    .small { font-size: 12px; color: #666; }
+    .warn { color: #b00020; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h2>JWT Token Generator (DEV)</h2>
+  <p class="warn">Sadece lokal test için. Secret'ı client tarafında kullanmak production'da YASAK.</p>
+
+  <div class="card">
+    <div class="row">
+      <label>JWT Secret</label>
+      <input id="secret" placeholder="Server'daki JWT_SECRET ile aynı olmalı" />
+    </div>
+
+    <div class="row">
+      <label>User ID</label>
+      <input id="userId" placeholder="Örn: user-1 veya UUID" />
+    </div>
+
+    <div class="row">
+      <label>Username</label>
+      <input id="username" placeholder="Örn: Kaya" />
+    </div>
+
+    <div class="row">
+      <label>Expires</label>
+      <select id="expires">
+        <option value="15m">15m</option>
+        <option value="1h" selected>1h</option>
+        <option value="12h">12h</option>
+        <option value="1d">1d</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <button id="generateBtn">Generate Token</button>
+      <button id="copyBtn" disabled>Copy Token</button>
+      <button id="saveBtn" disabled>Save to localStorage</button>
+      <button id="loadBtn">Load last</button>
+      <button id="clearBtn">Clear</button>
+    </div>
+
+    <p class="small">
+      İpucu: Secret’ı her seferinde yazmamak için “Save to localStorage” kullanabilirsin. (Yine de sadece DEV)
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>Payload Preview</h3>
+    <pre id="payloadPreview">{}</pre>
+  </div>
+
+  <div class="card">
+    <h3>Generated Token</h3>
+    <pre id="tokenOut">(henüz yok)</pre>
+  </div>
+
+  <!-- jwt library -->
+  <script>
+  const secretNote = document.querySelector(".warn");
+  if (secretNote) secretNote.remove(); // artık secret client'ta yok
+
+  const userIdEl = document.getElementById("userId");
+  const usernameEl = document.getElementById("username");
+  const tokenOutEl = document.getElementById("tokenOut");
+
+  document.getElementById("generateBtn").onclick = async () => {
+    const userId = userIdEl.value.trim();
+    const username = usernameEl.value.trim();
+
+    if (!userId || !username) {
+      return alert("userId ve username gerekli.");
+    }
+
+    try {
+      const res = await fetch("http://localhost:3000/dev/token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ userId, username })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        return alert(data.message || "Hata oluştu");
+      }
+
+      tokenOutEl.textContent = data.token;
+
+    } catch (err) {
+      alert("Sunucuya bağlanılamadı");
+    }
+  };
+</script>
+</body>
+</html>

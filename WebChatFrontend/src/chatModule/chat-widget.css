@@ -1,3 +1,6 @@
+/* =========================
+   Root / FAB
+========================= */
 .cw {
     position: fixed;
     right: 18px;
@@ -18,7 +21,9 @@
     box-shadow: 0 10px 30px rgba(0, 0, 0, .25);
 }
 
-/* Panel common */
+/* =========================
+   Panels
+========================= */
 .cw-panel {
     position: absolute;
     right: 0;
@@ -62,6 +67,9 @@
     cursor: pointer;
 }
 
+/* =========================
+   People list
+========================= */
 .cw-search {
     padding: 10px;
     border-bottom: 1px solid #eee;
@@ -124,7 +132,37 @@
     margin-top: 4px;
 }
 
-/* Chat header */
+/* Inbox extras */
+.cw-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.cw-time {
+    margin-left: auto;
+    font-size: 12px;
+    opacity: .65;
+    white-space: nowrap;
+}
+
+.cw-badge {
+    min-width: 22px;
+    height: 22px;
+    padding: 0 7px;
+    border-radius: 999px;
+    background: #0aa64b;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+/* =========================
+   Chat header
+========================= */
 .cw-left {
     display: flex;
     align-items: center;
@@ -162,12 +200,19 @@
     opacity: .85;
 }
 
-/* Messages */
+/* =========================
+   Messages
+========================= */
+
 .cw-messages {
     height: 300px;
     padding: 12px;
     background: #fafafa;
     overflow: auto;
+
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 .cw-msg {
@@ -177,24 +222,71 @@
     margin: 8px 0;
     font-size: 14px;
     line-height: 1.4;
-    word-wrap: break-word;
+
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 8px;
+
+    word-break: break-word;
+    white-space: pre-wrap;
+    align-self: flex-start;
 }
 
-/* Benim mesajım */
 .cw-msg.me {
     background: #dcf8c6;
     margin-left: auto;
-    color: #1a1a1a;   /* ✅ koyu yazı */
+    color: #1a1a1a;
+
+    align-self: flex-end;
+    margin-left: 0;
 }
 
-/* Karşı taraf */
 .cw-msg.them {
     background: #fff;
     border: 1px solid #eee;
-    color: #222;      /* ✅ koyu yazı */
+    color: #222;
 }
 
-/* Input */
+.cw-text {
+    display: inline;
+}
+
+.cw-meta2 {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    font-size: 12px;
+    opacity: .75;
+    margin-left: 4px;
+}
+
+.cw-ticks {
+    display: inline-flex;
+    align-items: center;
+    line-height: 1;
+    font-weight: 900;
+}
+
+.cw-ticks .t2 {
+    display: none;
+}
+
+.cw-ticks.read .t2 {
+    display: inline-block;
+    margin-left: -6px;
+}
+
+.cw-ticks.read {
+    opacity: 1;
+}
+
+.cw-ticks.sent {
+    opacity: .65;
+}
+
+/* =========================
+   Input
+========================= */
 .cw-input {
     display: flex;
     gap: 8px;
@@ -219,35 +311,11 @@
     cursor: pointer;
 }
 
+/* =========================
+   Responsive
+========================= */
 @media (max-width: 420px) {
     .cw-panel {
         width: min(92vw, 360px);
     }
-}
-
-.cw-top{
-  display:flex;
-  align-items:center;
-  gap:8px;
-}
-
-.cw-time{
-  margin-left:auto;
-  font-size:12px;
-  opacity:.65;
-  white-space:nowrap;
-}
-
-.cw-badge{
-  min-width:22px;
-  height:22px;
-  padding:0 7px;
-  border-radius:999px;
-  background:#0aa64b;
-  color:#fff;
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  font-size:12px;
-  font-weight:800;
 }

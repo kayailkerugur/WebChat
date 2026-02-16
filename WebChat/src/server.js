@@ -49,14 +49,14 @@ io.on("connection", (socket) => {
   console.log("✅ Connected:", { userId, username });
 
   // -------------------------
-  // ROOM EVENTS (opsiyonel)
+  // ROOM EVENTS (opsiyonel / legacy)
   // -------------------------
   socket.on("room:join", ({ roomId }) => {
     if (!roomId) return socket.emit("error", { code: "VALIDATION", message: "roomId is required" });
 
     socket.join(roomId);
 
-    const presenceUser = { userId, username };
+    const presenceUser = { id: userId, username }; // presence.service.js id bekliyor olabilir
     const users = joinRoom(roomId, presenceUser);
     const history = getRoomHistory(roomId);
 
@@ -74,73 +74,83 @@ io.on("connection", (socket) => {
   });
 
   // -------------------------
-  // DM OPEN (DB + history)
+  // DM OPEN (DB + history + peerLastReadAt)
   // -------------------------
   socket.on("dm:open", async ({ peerId }) => {
-    const u = socket.data.user || {};
-    const myId = u.userId || u.id;
-    const myUsername = u.username;
+    console.log("🔥 dm:open", { from: username, myId: userId, peerId });
 
-    console.log("🔥 dm:open", { from: myUsername, myId, peerId });
-
-    if (!myId) {
-      return socket.emit("error", { code: "AUTH", message: "missing myId in token" });
-    }
     if (!peerId) {
       return socket.emit("error", { code: "VALIDATION", message: "peerId required" });
     }
-    if (peerId === myId) {
+    if (peerId === userId) {
       return socket.emit("error", { code: "VALIDATION", message: "cannot DM yourself" });
     }
 
-    const key = dmKey(myId, peerId);
-
+    const key = dmKey(userId, peerId);
     const client = await pool.connect();
-    try {
-      await client.query("begin");
 
+    try {
+      await client.query("BEGIN");
+
+      // peer var mı?
       const peerCheck = await client.query(`select id, username from users where id=$1`, [peerId]);
       if (!peerCheck.rowCount) {
-        await client.query("rollback");
+        await client.query("ROLLBACK");
         return socket.emit("error", { code: "NOT_FOUND", message: "peer user not found" });
       }
 
+      // conversation var mı?
       const q = await client.query(`select id from conversations where dm_key=$1`, [key]);
       let conversationId = q.rows[0]?.id;
 
+      // yoksa oluştur + members ekle
       if (!conversationId) {
         const ins = await client.query(
           `insert into conversations (type, dm_key)
-         values ('DM', $1)
-         returning id`,
+           values ('DM', $1)
+           returning id`,
           [key]
         );
         conversationId = ins.rows[0].id;
 
         await client.query(
           `insert into conversation_members (conversation_id, user_id)
-         values ($1,$2),($1,$3)`,
-          [conversationId, myId, peerId]
+           values ($1,$2),($1,$3)`,
+          [conversationId, userId, peerId]
         );
       }
 
+      // history
       const hist = await client.query(
         `select m.id, m.body, m.sent_at,
-              u.id as sender_id, u.username
-       from messages m
-       join users u on u.id = m.sender_id
-       where m.conversation_id = $1
-       order by m.sent_at asc
-       limit 50`,
+                u.id as sender_id, u.username
+         from messages m
+         join users u on u.id = m.sender_id
+         where m.conversation_id = $1
+         order by m.sent_at asc
+         limit 50`,
         [conversationId]
       );
 
-      await client.query("commit");
+      // ✅ peer last_read_at (commit'ten önce, doğru param: userId)
+      const peerRead = await client.query(
+        `select last_read_at
+         from conversation_members
+         where conversation_id = $1
+           and user_id <> $2
+         limit 1`,
+        [conversationId, userId]
+      );
+      const peerLastReadAt = peerRead.rows[0]?.last_read_at || null;
 
+      await client.query("COMMIT");
+
+      // room join + state emit
       socket.join(conversationId);
 
       socket.emit("dm:state", {
         conversationId,
+        peerLastReadAt,
         history: hist.rows.map(r => ({
           id: r.id,
           text: r.body,
@@ -150,19 +160,14 @@ io.on("connection", (socket) => {
       });
 
       console.log("🔥 dm:state OK", { conversationId });
-
     } catch (e) {
-      await client.query("rollback");
+      await client.query("ROLLBACK");
       console.error("❌ dm:open error:", {
         code: e.code,
         message: e.message,
         detail: e.detail
       });
-
-      socket.emit("error", {
-        code: "SERVER",
-        message: "dm:open failed"
-      });
+      socket.emit("error", { code: "SERVER", message: "dm:open failed" });
     } finally {
       client.release();
     }
@@ -177,9 +182,11 @@ io.on("connection", (socket) => {
     }
 
     try {
-      // üyelik kontrolü
+      // üyelik kontrol
       const mem = await pool.query(
-        `select 1 from conversation_members where conversation_id=$1 and user_id=$2`,
+        `select 1
+         from conversation_members
+         where conversation_id=$1 and user_id=$2`,
         [conversationId, userId]
       );
       if (!mem.rowCount) {
@@ -202,20 +209,17 @@ io.on("connection", (socket) => {
       };
 
       io.to(conversationId).emit("message:new", { conversationId, message });
-
     } catch (e) {
       console.error("❌ message:send error:", e);
       socket.emit("error", { code: "SERVER", message: "message:send failed" });
     }
   });
 
+  // -------------------------
+  // TYPING (conversationId-based)
+  // -------------------------
   socket.on("typing:start", ({ conversationId }) => {
     if (!conversationId) return;
-
-    const u = socket.data.user || {};
-    const userId = u.userId || u.id;
-    const username = u.username;
-
     if (!socket.rooms.has(conversationId)) return;
 
     socket.to(conversationId).emit("typing", {
@@ -228,11 +232,6 @@ io.on("connection", (socket) => {
 
   socket.on("typing:stop", ({ conversationId }) => {
     if (!conversationId) return;
-
-    const u = socket.data.user || {};
-    const userId = u.userId || u.id;
-    const username = u.username;
-
     if (!socket.rooms.has(conversationId)) return;
 
     socket.to(conversationId).emit("typing", {
@@ -243,41 +242,63 @@ io.on("connection", (socket) => {
     });
   });
 
+  // -------------------------
+  // READ (last_read_at) + broadcast
+  // -------------------------
+  socket.on("conversation:read", async ({ conversationId }) => {
+    if (!conversationId) return;
+
+    try {
+      const mem = await pool.query(
+        `select 1
+       from conversation_members
+       where conversation_id=$1 and user_id=$2`,
+        [conversationId, userId]
+      );
+      if (!mem.rowCount) return;
+
+      // ✅ DB zamanını al
+      const upd = await pool.query(
+        `update conversation_members
+       set last_read_at = now()
+       where conversation_id=$1 and user_id=$2
+       returning last_read_at`,
+        [conversationId, userId]
+      );
+
+      const lastReadAt = upd.rows[0]?.last_read_at;
+
+      socket.emit("conversation:read:ok", { conversationId, lastReadAt });
+
+      socket.to(conversationId).emit("read:updated", {
+        conversationId,
+        userId,        // okuyan kişi (peer)
+        lastReadAt     // ✅ DB time
+      });
+
+    } catch (e) {
+      console.error("❌ conversation:read error:", e);
+      socket.emit("error", { code: "SERVER", message: "conversation:read failed" });
+    }
+  });
+
+  // -------------------------
+  // DISCONNECT
+  // -------------------------
   socket.on("disconnect", () => {
     console.log("❌ Disconnected:", { userId, username });
 
     const leftRooms = removeUserFromAllRooms(userId);
 
+    // ✅ typing payload artık conversationId
     for (const roomId of leftRooms) {
       socket.to(roomId).emit("typing", {
-        roomId,
+        conversationId: roomId,
         userId,
         username,
         isTyping: false
       });
     }
-  });
-
-  socket.on("conversation:read", async ({ conversationId }) => {
-    if (!conversationId) return;
-
-    const u = socket.data.user || {};
-    const userId = u.userId || u.id;
-
-    const mem = await pool.query(
-      `select 1 from conversation_members where conversation_id=$1 and user_id=$2`,
-      [conversationId, userId]
-    );
-    if (!mem.rowCount) return;
-
-    await pool.query(
-      `update conversation_members
-     set last_read_at = now()
-     where conversation_id=$1 and user_id=$2`,
-      [conversationId, userId]
-    );
-
-    socket.emit("conversation:read:ok", { conversationId });
   });
 });
 

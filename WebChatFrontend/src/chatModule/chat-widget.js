@@ -30,13 +30,19 @@ function initChatWidget() {
 
   let token = localStorage.getItem("jwt_token");
   let me = JSON.parse(localStorage.getItem("me_user") || "null");
-  let PEOPLE = []; // {id, username}
-  let currentPeerId = null;
+  let INBOX = []; // {conversationId, peerId, peerUsername, lastMessage, lastSentAt}
+  let currentPeerId = null; // kalabilir, istersen kaldırırız
   let currentConversationId = null;
   let socket = null;
 
   function initials(name) {
     return String(name || "").slice(0, 2).toUpperCase();
+  }
+
+  function escapeHtml(s) {
+    return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
+    }[c]));
   }
 
   function openPeople() {
@@ -47,7 +53,12 @@ function initChatWidget() {
     peoplePanel.setAttribute("aria-hidden", "false");
 
     search.value = "";
-    renderPeople("");
+    loadConversations()
+      .then(() => renderInbox(""))
+      .catch(err => {
+        console.error(err);
+        list.innerHTML = `<div style="padding:12px;opacity:.7">Konuşmalar yüklenemedi</div>`;
+      });
     setTimeout(() => search.focus(), 0);
   }
 
@@ -58,29 +69,38 @@ function initChatWidget() {
     chatPanel.setAttribute("aria-hidden", "true");
   }
 
-  function renderPeople(q) {
-    const query = (q || "").toLowerCase().trim();
-    const filtered = PEOPLE.filter(p => (p.username || "").toLowerCase().includes(query));
+  function fmtTime(iso) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    return d.toLocaleString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+  }
 
-    list.innerHTML = filtered.map(p => `
-      <button class="cw-item" data-id="${p.id}">
-        <div class="cw-av">${initials(p.username)}</div>
-        <div class="cw-meta">
-          <div class="n">${p.username}</div>
-          <div class="s"></div>
-          <div class="p"></div>
-        </div>
-      </button>
-    `).join("");
+  function renderInbox(q) {
+    const query = (q || "").toLowerCase().trim();
+    const filtered = INBOX.filter(c => (c.peerUsername || "").toLowerCase().includes(query));
+
+    list.innerHTML = filtered.map(c => `
+    <button class="cw-item" data-peer="${c.peerId}">
+      <div class="cw-av">${initials(c.peerUsername)}</div>
+      <div class="cw-meta">
+        <div class="n">${escapeHtml(c.peerUsername)}</div>
+        <div class="p">${escapeHtml(c.lastMessage || "")}</div>
+      </div>
+      <div style="margin-left:auto;font-size:12px;opacity:.65;">
+        ${fmtTime(c.lastSentAt)}
+      </div>
+    </button>
+  `).join("");
 
     list.querySelectorAll(".cw-item").forEach(btn => {
-      btn.addEventListener("click", () => openChat(btn.dataset.id));
+      btn.addEventListener("click", () => openChat(btn.dataset.peer));
     });
   }
 
   function appendMessage(msg) {
     const div = document.createElement("div");
-    const isMe = msg?.from?.userId === me?.id;
+    const myId = me?.id || me?.userId;
+    const isMe = msg?.from?.userId === myId;
     div.className = `cw-msg ${isMe ? "me" : "them"}`;
     div.textContent = msg?.text ?? "";
     messagesEl.appendChild(div);
@@ -93,14 +113,14 @@ function initChatWidget() {
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
-  async function loadUsers() {
-    const res = await fetch(`${API_BASE}/users`, {
+  async function loadConversations() {
+    const res = await fetch(`${API_BASE}/conversations`, {
       headers: { Authorization: `Bearer ${token}` }
     });
-    if (!res.ok) throw new Error("users fetch failed");
+    if (!res.ok) throw new Error("conversations fetch failed");
     const data = await res.json();
-    PEOPLE = data.users || [];
-    renderPeople(search.value);
+    INBOX = data.conversations || [];
+    renderInbox(search.value);
   }
 
   function connectSocket() {
@@ -115,12 +135,6 @@ function initChatWidget() {
     socket.on("disconnect", () => console.log("❌ socket disconnected"));
     socket.on("error", (e) => console.log("ERR:", e));
 
-    // DM state: conversationId + history
-    socket.on("dm:state", ({ conversationId, history }) => {
-      if (conversationId !== currentConversationId) return;
-      renderHistory(history || []);
-    });
-
     socket.on("message:new", ({ conversationId, message }) => {
       if (conversationId !== currentConversationId) return;
       appendMessage(message);
@@ -128,13 +142,13 @@ function initChatWidget() {
   }
 
   function openChat(peerId) {
-    const p = PEOPLE.find(x => x.id === peerId);
-    if (!p) return;
+    const c = INBOX.find(x => x.peerId === peerId);
+    if (!c) return;
 
     currentPeerId = peerId;
 
-    nameEl.textContent = p.username;
-    avatarEl.textContent = initials(p.username);
+    nameEl.textContent = c.peerUsername;
+    avatarEl.textContent = initials(c.peerUsername);
     subEl.textContent = "";
 
     peoplePanel.classList.remove("open");
@@ -171,8 +185,7 @@ function initChatWidget() {
   closePeople.addEventListener("click", (e) => { e.stopPropagation(); closeAll(); });
   closeChat.addEventListener("click", (e) => { e.stopPropagation(); closeAll(); });
   backBtn.addEventListener("click", (e) => { e.stopPropagation(); openPeople(); });
-  search.addEventListener("input", (e) => renderPeople(e.target.value));
-
+  search.addEventListener("input", (e) => renderInbox(e.target.value));
   function wireDmState() {
     socket.on("dm:state", ({ conversationId, history }) => {
       currentConversationId = conversationId;
@@ -187,7 +200,7 @@ function initChatWidget() {
 
   connectSocket();
   wireDmState();
-  loadUsers().catch(err => console.error(err));
+  loadConversations().catch(err => console.error(err));
 }
 
 document.addEventListener("DOMContentLoaded", () => {

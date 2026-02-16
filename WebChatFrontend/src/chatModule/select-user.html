@@ -1,26 +1,42 @@
 <!doctype html>
 <html lang="tr">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Dev Kullanıcı Seç</title>
   <style>
-    body{
+    body {
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
       max-width: 520px;
       margin: 48px auto;
       padding: 0 16px;
     }
-    .card{
+
+    .card {
       border: 1px solid #eee;
       border-radius: 14px;
       padding: 16px;
-      box-shadow: 0 6px 18px rgba(0,0,0,.06);
+      box-shadow: 0 6px 18px rgba(0, 0, 0, .06);
     }
-    h1{ margin: 0 0 8px; }
-    .muted{ opacity: .7; font-size: 12px; margin: 0 0 16px; }
-    label{ display:block; font-weight: 700; margin: 10px 0 6px; }
-    input{
+
+    h1 {
+      margin: 0 0 8px;
+    }
+
+    .muted {
+      opacity: .7;
+      font-size: 12px;
+      margin: 0 0 16px;
+    }
+
+    label {
+      display: block;
+      font-weight: 700;
+      margin: 10px 0 6px;
+    }
+
+    input {
       width: 100%;
       padding: 10px 12px;
       border: 1px solid #ddd;
@@ -28,8 +44,14 @@
       outline: none;
       font-size: 14px;
     }
-    .row{ display:flex; gap: 10px; margin-top: 12px; }
-    button{
+
+    .row {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    button {
       flex: 1;
       padding: 10px 12px;
       border: 0;
@@ -37,25 +59,40 @@
       cursor: pointer;
       font-weight: 700;
     }
-    .primary{ background:#0aa64b; color:#fff; }
-    .secondary{ background:#111; color:#fff; }
-    .danger{ background:#ff3b30; color:#fff; }
-    pre{
-      background:#0b0b0b;
-      color:#d7ffd7;
+
+    .primary {
+      background: #0aa64b;
+      color: #fff;
+    }
+
+    .secondary {
+      background: #111;
+      color: #fff;
+    }
+
+    .danger {
+      background: #ff3b30;
+      color: #fff;
+    }
+
+    pre {
+      background: #0b0b0b;
+      color: #d7ffd7;
       padding: 12px;
       border-radius: 12px;
-      overflow:auto;
+      overflow: auto;
       font-size: 12px;
       margin-top: 14px;
-      display:none;
+      display: none;
     }
   </style>
 </head>
+
 <body>
   <h1>Dev: Authenticated Kullanıcı Seç</h1>
   <p class="muted">
-    Username gir → backend <code>/auth/dev-login</code> → JWT localStorage’a kaydedilir → <code>index.html</code>’e dönülür.
+    Username gir → backend <code>/auth/dev-login</code> → JWT localStorage’a kaydedilir → <code>index.html</code>’e
+    dönülür.
   </p>
 
   <div class="card">
@@ -131,8 +168,9 @@
 
     const existing = localStorage.getItem("me_user");
     if (existing) {
-      try { show({ current: JSON.parse(existing) }); } catch {}
+      try { show({ current: JSON.parse(existing) }); } catch { }
     }
   </script>
 </body>
+
 </html>

@@ -238,7 +238,6 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     console.log("❌ Disconnected:", { userId, username });
 
-    // Eğer presence servislerin room bazlı çalışıyorsa:
     const leftRooms = removeUserFromAllRooms(userId);
 
     for (const roomId of leftRooms) {
@@ -322,5 +321,7 @@ app.get("/health/db", async (req, res) => {
 app.use("/auth", require("./routes/auth.routes"));
 
 app.use("/", require("./routes/users.routes"));
+
+app.use("/", require("./routes/conversations.routes"));
 
 module.exports = { io };

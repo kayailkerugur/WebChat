@@ -121,14 +121,18 @@ io.on("connection", (socket) => {
       }
 
       // history
+      // history (son 50)
       const hist = await client.query(
-        `select m.id, m.body, m.sent_at,
-                u.id as sender_id, u.username
-         from messages m
-         join users u on u.id = m.sender_id
-         where m.conversation_id = $1
-         order by m.sent_at asc
-         limit 50`,
+        `select * from (
+      select m.id, m.body, m.sent_at,
+             u.id as sender_id, u.username
+      from messages m
+      join users u on u.id = m.sender_id
+      where m.conversation_id = $1
+      order by m.sent_at desc
+      limit 50
+   ) t
+   order by t.sent_at asc`,
         [conversationId]
       );
 

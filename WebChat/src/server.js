@@ -158,16 +158,21 @@ io.on("connection", (socket) => {
       // history (son 50)
       const hist = await client.query(
         `select * from (
-      select m.id, m.body, m.sent_at,
-             u.id as sender_id, u.username
-      from messages m
-      join users u on u.id = m.sender_id
-      where m.conversation_id = $1
-      order by m.sent_at desc
-      limit 50
+     select m.id, m.body, m.sent_at, m.deleted_for_all, m.deleted_at,
+            u.id as sender_id, u.username
+     from messages m
+     join users u on u.id = m.sender_id
+     where m.conversation_id = $1
+       and not exists (
+         select 1 from message_deletions d
+         where d.message_id = m.id
+           and d.user_id = $2
+       )
+     order by m.sent_at desc
+     limit 50
    ) t
    order by t.sent_at asc`,
-        [conversationId]
+        [conversationId, userId]
       );
 
       const peerRead = await client.query(
@@ -194,7 +199,9 @@ io.on("connection", (socket) => {
         },
         history: hist.rows.map(r => ({
           id: r.id,
-          text: r.body,
+          text: r.deleted_for_all ? "Mesaj silindi" : r.body,
+          deletedForAll: r.deleted_for_all,
+          deletedAt: r.deleted_at,
           sentAt: r.sent_at,
           from: { userId: r.sender_id, username: r.username }
         }))
@@ -353,12 +360,87 @@ io.on("connection", (socket) => {
       });
     }
 
-    // ✅ aktif konuşmalara offline bildir
     socket.broadcast.emit("presence:update", {
       userId,
       isOnline: false,
       lastSeen: new Date().toISOString()
     });
+  });
+
+  socket.on("message:delete", async ({ conversationId, messageId, scope }) => {
+    if (!conversationId || !messageId || !scope) {
+      return socket.emit("error", { code: "VALIDATION", message: "conversationId, messageId, scope required" });
+    }
+    if (!["me", "all"].includes(scope)) {
+      return socket.emit("error", { code: "VALIDATION", message: "scope must be 'me' or 'all'" });
+    }
+
+    try {
+      const mem = await pool.query(
+        `select 1 from conversation_members where conversation_id=$1 and user_id=$2`,
+        [conversationId, userId]
+      );
+      if (!mem.rowCount) {
+        return socket.emit("error", { code: "FORBIDDEN", message: "not a member" });
+      }
+
+      const msgQ = await pool.query(
+        `select id, sender_id, deleted_for_all from messages where id=$1 and conversation_id=$2`,
+        [messageId, conversationId]
+      );
+      if (!msgQ.rowCount) {
+        return socket.emit("error", { code: "NOT_FOUND", message: "message not found" });
+      }
+
+      const msg = msgQ.rows[0];
+
+      if (scope === "me") {
+        await pool.query(
+          `insert into message_deletions (message_id, user_id)
+         values ($1,$2)
+         on conflict do nothing`,
+          [messageId, userId]
+        );
+
+        socket.emit("message:deleted", {
+          scope: "me",
+          conversationId,
+          messageId,
+          deletedAt: new Date().toISOString()
+        });
+
+        socket.emit("conversations:refresh");
+
+        return;
+      }
+
+      if (String(msg.sender_id) !== String(userId)) {
+        return socket.emit("error", { code: "FORBIDDEN", message: "only sender can delete for everyone" });
+      }
+
+      const upd = await pool.query(
+        `update messages
+       set deleted_for_all=true,
+           deleted_at=now(),
+           deleted_by=$3
+       where id=$1 and conversation_id=$2
+       returning deleted_at`,
+        [messageId, conversationId, userId]
+      );
+
+      const deletedAt = upd.rows[0]?.deleted_at || new Date().toISOString();
+
+      io.to(conversationId).emit("message:deleted", {
+        scope: "all",
+        conversationId,
+        messageId,
+        deletedAt
+      });
+
+    } catch (e) {
+      console.error("❌ message:delete error:", e);
+      socket.emit("error", { code: "SERVER", message: "message:delete failed" });
+    }
   });
 });
 

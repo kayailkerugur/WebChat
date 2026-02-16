@@ -34,6 +34,8 @@ function initChatWidget() {
   const me = JSON.parse(localStorage.getItem("me_user") || "null");
   const myId = me?.id || me?.userId;
 
+  let ctxMenuEl = null;
+
   if (!token || !me || !myId) {
     console.warn("jwt_token / me_user yok. Önce select-user.html ile login ol.");
     return;
@@ -216,14 +218,18 @@ function initChatWidget() {
     const div = document.createElement("div");
     const isMe = msg?.from?.userId === myId;
 
+    const deletedForAll = !!msg?.deletedForAll;
+
     div.className = `cw-msg ${isMe ? "me" : "them"}`;
+
+    if (deletedForAll) div.classList.add("deleted");
 
     const text = document.createElement("span");
     text.className = "cw-text";
-    text.textContent = msg?.text ?? "";
+    text.textContent = deletedForAll ? "Mesaj silindi" : (msg?.text ?? "");
     div.appendChild(text);
 
-    if (isMe) {
+    if (isMe && !deletedForAll) {
       const meta = document.createElement("span");
       meta.className = "cw-meta2";
 
@@ -232,13 +238,47 @@ function initChatWidget() {
       ticks.dataset.sentAt = msg.sentAt || "";
 
       ticks.innerHTML = `
-        <span class="tick t1">✓</span>
-        <span class="tick t2">✓</span>
-      `;
+      <span class="tick t1">✓</span>
+      <span class="tick t2">✓</span>
+    `;
 
       meta.appendChild(ticks);
       div.appendChild(meta);
     }
+
+    div.dataset.mid = msg.id;
+
+    div.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (!socket || !currentConversationId) return;
+
+      const isMine = msg?.from?.userId === myId;
+
+      openCtxMenu({
+        x: e.clientX,
+        y: e.clientY,
+        isMine,
+        onDeleteMe: () => {
+          socket.emit("message:delete", {
+            conversationId: currentConversationId,
+            messageId: msg.id,
+            scope: "me"
+          });
+        },
+        onDeleteAll: () => {
+          const ok = confirm("Bu mesajı herkes için silmek istiyor musun?");
+          if (!ok) return;
+
+          socket.emit("message:delete", {
+            conversationId: currentConversationId,
+            messageId: msg.id,
+            scope: "all"
+          });
+        }
+      });
+    });
 
     messagesEl.appendChild(div);
     messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -261,6 +301,54 @@ function initChatWidget() {
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
+  function closeCtxMenu() {
+    if (ctxMenuEl) {
+      ctxMenuEl.remove();
+      ctxMenuEl = null;
+    }
+  }
+
+  function openCtxMenu({ x, y, isMine, onDeleteMe, onDeleteAll }) {
+    closeCtxMenu();
+
+    const menu = document.createElement("div");
+    menu.className = "cw-menu";
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+
+    // Benim için sil (her zaman)
+    const delMe = document.createElement("button");
+    delMe.innerHTML = `Benim için sil <span class="muted">(sadece sende)</span>`;
+    delMe.onclick = () => {
+      closeCtxMenu();
+      onDeleteMe?.();
+    };
+    menu.appendChild(delMe);
+
+    // Herkes için sil (sadece benim mesajımda)
+    if (isMine) {
+      const delAll = document.createElement("button");
+      delAll.className = "danger";
+      delAll.innerHTML = `Herkes için sil <span class="muted">(mesaj silindi)</span>`;
+      delAll.onclick = () => {
+        closeCtxMenu();
+        onDeleteAll?.();
+      };
+      menu.appendChild(delAll);
+    }
+
+    document.body.appendChild(menu);
+
+    // ekran dışına taşmasın
+    const r = menu.getBoundingClientRect();
+    let nx = x, ny = y;
+    if (r.right > window.innerWidth) nx = window.innerWidth - r.width - 8;
+    if (r.bottom > window.innerHeight) ny = window.innerHeight - r.height - 8;
+    menu.style.left = `${Math.max(8, nx)}px`;
+    menu.style.top = `${Math.max(8, ny)}px`;
+
+    ctxMenuEl = menu;
+  }
   // API: conversations
   async function loadConversations() {
     const res = await fetch(`${API_BASE}/conversations`, {
@@ -377,11 +465,11 @@ function initChatWidget() {
         subEl.textContent = "yazıyor...";
         clearTimeout(typingClearTimer);
         typingClearTimer = setTimeout(() => {
-          renderPresence(); 
+          renderPresence();
         }, 2000);
       } else {
         clearTimeout(typingClearTimer);
-        renderPresence(); 
+        renderPresence();
       }
     });
 
@@ -393,6 +481,24 @@ function initChatWidget() {
       if (!subEl.textContent.includes("yazıyor")) {
         renderPresence();
       }
+    });
+
+    socket.on("message:deleted", ({ scope, conversationId, messageId }) => {
+      if (conversationId !== currentConversationId) return;
+
+      if (scope === "me") {
+        currentHistory = currentHistory.filter(m => m.id !== messageId);
+        renderHistory(currentHistory);
+        return;
+      }
+
+      // scope === "all"
+      const m = currentHistory.find(x => x.id === messageId);
+      if (m) {
+        m.deletedForAll = true;
+        m.text = "Mesaj silindi";
+      }
+      renderHistory(currentHistory);
     });
   }
 
@@ -452,7 +558,7 @@ function initChatWidget() {
 
   // Click handling
   root.addEventListener("click", (e) => e.stopPropagation());
-  document.addEventListener("click", closeAll);
+  // document.addEventListener("click", closeAll);
 
   fab.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -464,6 +570,9 @@ function initChatWidget() {
   closePeople.addEventListener("click", (e) => { e.stopPropagation(); closeAll(); });
   closeChat.addEventListener("click", (e) => { e.stopPropagation(); closeAll(); });
   backBtn.addEventListener("click", (e) => { e.stopPropagation(); openPeople(); });
+  // document.addEventListener("click", () => closeCtxMenu());
+  window.addEventListener("scroll", () => closeCtxMenu(), { passive: true });
+  window.addEventListener("resize", () => closeCtxMenu());
 
   // start
   connectSocket();

@@ -41,3 +41,21 @@ create index if not exists idx_msg_conv_sent on messages(conversation_id, sent_a
 alter table users
 add column if not exists last_seen timestamptz,
 add column if not exists is_online boolean default false;
+
+alter table messages
+  add column if not exists deleted_at timestamptz,
+  add column if not exists deleted_by uuid references users(id) on delete set null,
+  add column if not exists deleted_for_all boolean not null default false;
+
+create index if not exists idx_messages_deleted_for_all
+  on messages (conversation_id, deleted_for_all);
+
+create table if not exists message_deletions (
+  message_id uuid not null references messages(id) on delete cascade,
+  user_id uuid not null references users(id) on delete cascade,
+  deleted_at timestamptz not null default now(),
+  primary key (message_id, user_id)
+);
+
+create index if not exists idx_msg_del_user_conv
+  on message_deletions (user_id, message_id);

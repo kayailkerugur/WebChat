@@ -37,3 +37,7 @@ add column if not exists last_read_at timestamptz;
 
 create index if not exists idx_cm_conv_user on conversation_members(conversation_id, user_id);
 create index if not exists idx_msg_conv_sent on messages(conversation_id, sent_at desc);
+
+alter table users
+add column if not exists last_seen timestamptz,
+add column if not exists is_online boolean default false;

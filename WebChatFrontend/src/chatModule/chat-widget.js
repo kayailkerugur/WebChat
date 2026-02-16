@@ -49,7 +49,7 @@ function initChatWidget() {
 
   let peerLastReadAt = null;
   let currentHistory = [];
-  let historyIds = new Set();  
+  let historyIds = new Set();
 
   let socket = null;
 
@@ -57,6 +57,29 @@ function initChatWidget() {
   let typingTimer = null;
   let isTyping = false;
   let typingClearTimer = null;
+
+  let peerPresence = { isOnline: false, lastSeen: null };
+  function renderPresence() {
+    if (!currentPeerId) {
+      subEl.textContent = "";
+      return;
+    }
+
+    if (peerPresence?.isOnline) {
+      subEl.textContent = "🟢 Çevrimiçi";
+      return;
+    }
+
+    if (peerPresence?.lastSeen) {
+      const d = new Date(peerPresence.lastSeen);
+      subEl.textContent =
+        "Son görülme: " +
+        d.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+      return;
+    }
+
+    subEl.textContent = "";
+  }
 
   // Helpers
   function initials(name) {
@@ -153,7 +176,7 @@ function initChatWidget() {
     if (!res.ok) throw new Error("user search failed");
 
     const data = await res.json();
-    USER_RESULTS = (data.users || []).filter(u => u.id !== myId); // kendini gösterme
+    USER_RESULTS = (data.users || []).filter(u => u.id !== myId);
     renderUserResults(USER_RESULTS);
   }
 
@@ -205,13 +228,13 @@ function initChatWidget() {
       meta.className = "cw-meta2";
 
       const ticks = document.createElement("span");
-      ticks.className = "cw-ticks";              
-      ticks.dataset.sentAt = msg.sentAt || "";   
+      ticks.className = "cw-ticks";
+      ticks.dataset.sentAt = msg.sentAt || "";
 
       ticks.innerHTML = `
-      <span class="tick t1">✓</span>
-      <span class="tick t2">✓</span>
-    `;
+        <span class="tick t1">✓</span>
+        <span class="tick t2">✓</span>
+      `;
 
       meta.appendChild(ticks);
       div.appendChild(meta);
@@ -226,7 +249,6 @@ function initChatWidget() {
 
     document.querySelectorAll("#cwMessages .cw-ticks").forEach(el => {
       const sentAt = el.dataset.sentAt ? new Date(el.dataset.sentAt).getTime() : 0;
-
       if (readAt && sentAt && sentAt <= readAt) el.classList.add("read");
       else el.classList.remove("read");
     });
@@ -269,6 +291,7 @@ function initChatWidget() {
     currentPeerId = peerId;
     currentConversationId = null;
     peerLastReadAt = null;
+    peerPresence = { isOnline: false, lastSeen: null };
     currentHistory = [];
     historyIds = new Set();
     clearTimeout(typingClearTimer);
@@ -307,19 +330,21 @@ function initChatWidget() {
     socket.on("conversation:read:ok", () => loadConversations().catch(console.error));
 
     // dm state
-    socket.on("dm:state", ({ conversationId, history, peerLastReadAt: pla }) => {
+    socket.on("dm:state", ({ conversationId, history, peerLastReadAt, presence }) => {
       currentConversationId = conversationId;
-      peerLastReadAt = pla || null;
+      peerLastReadAt = peerLastReadAt || null;
 
       currentHistory = history || [];
       renderHistory(currentHistory);
+      updateReadTicks();
 
-      updateReadTicks(); // ✅
+      peerPresence = {
+        isOnline: !!presence?.isOnline,
+        lastSeen: presence?.lastSeen || null
+      };
+      renderPresence();
 
       socket.emit("conversation:read", { conversationId });
-
-      console.log("DM STATE peerLastReadAt:", peerLastReadAt);
-      console.log("HISTORY last sentAt:", currentHistory?.[currentHistory.length - 1]?.sentAt);
     });
 
     // new message
@@ -336,29 +361,37 @@ function initChatWidget() {
     });
 
     socket.on("read:updated", (p) => {
-      console.log("READ UPDATED:", p); // debug
-
       const { conversationId, userId, lastReadAt } = p || {};
       if (conversationId !== currentConversationId) return;
 
       if (userId !== myId) {
         peerLastReadAt = lastReadAt;
-        updateReadTicks(); 
+        updateReadTicks();
       }
     });
 
-    let typingClearTimer = null;
     socket.on("typing", ({ conversationId, username, isTyping }) => {
       if (conversationId !== currentConversationId) return;
 
       if (isTyping) {
-        subEl.textContent = `${username} yazıyor...`;
+        subEl.textContent = "yazıyor...";
         clearTimeout(typingClearTimer);
         typingClearTimer = setTimeout(() => {
-          subEl.textContent = "";
+          renderPresence(); 
         }, 2000);
       } else {
-        subEl.textContent = "";
+        clearTimeout(typingClearTimer);
+        renderPresence(); 
+      }
+    });
+
+    socket.on("presence:update", ({ userId, isOnline, lastSeen }) => {
+      if (userId !== currentPeerId) return;
+
+      peerPresence = { isOnline: !!isOnline, lastSeen: lastSeen || null };
+
+      if (!subEl.textContent.includes("yazıyor")) {
+        renderPresence();
       }
     });
   }
@@ -399,7 +432,7 @@ function initChatWidget() {
     }, 600);
   });
 
-  // Search behavior (inbox filter vs user search)
+  // Search behavior
   let searchTimer = null;
   search.addEventListener("input", (e) => {
     const q = e.target.value.trim();

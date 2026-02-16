@@ -22,6 +22,8 @@ const { healthcheck } = require("./db/db");
 
 const { pool } = require("./db/db");
 
+const onlineUsers = new Map();
+
 const io = new Server(server, {
   cors: {
     origin: env.corsOrigin,
@@ -48,6 +50,28 @@ io.on("connection", (socket) => {
 
   console.log("✅ Connected:", { userId, username });
 
+  // -------------------------
+  // PRESENCE: ONLINE
+  // -------------------------
+
+  onlineUsers.set(userId, socket.id);
+
+  try {
+    pool.query(
+      `update users
+     set is_online = true
+     where id = $1`,
+      [userId]
+    );
+  } catch (e) {
+    console.error("❌ presence online update error:", e);
+  }
+
+  socket.broadcast.emit("presence:update", {
+    userId,
+    isOnline: true,
+    lastSeen: null
+  });
   // -------------------------
   // ROOM EVENTS (opsiyonel / legacy)
   // -------------------------
@@ -99,6 +123,16 @@ io.on("connection", (socket) => {
         return socket.emit("error", { code: "NOT_FOUND", message: "peer user not found" });
       }
 
+      const peerPresence = await client.query(
+        `select is_online, last_seen
+   from users
+   where id=$1`,
+        [peerId]
+      );
+
+      const isOnline = peerPresence.rows[0]?.is_online;
+      const lastSeen = peerPresence.rows[0]?.last_seen;
+
       // conversation var mı?
       const q = await client.query(`select id from conversations where dm_key=$1`, [key]);
       let conversationId = q.rows[0]?.id;
@@ -136,7 +170,6 @@ io.on("connection", (socket) => {
         [conversationId]
       );
 
-      // ✅ peer last_read_at (commit'ten önce, doğru param: userId)
       const peerRead = await client.query(
         `select last_read_at
          from conversation_members
@@ -155,6 +188,10 @@ io.on("connection", (socket) => {
       socket.emit("dm:state", {
         conversationId,
         peerLastReadAt,
+        presence: {
+          isOnline,
+          lastSeen
+        },
         history: hist.rows.map(r => ({
           id: r.id,
           text: r.body,
@@ -186,7 +223,6 @@ io.on("connection", (socket) => {
     }
 
     try {
-      // üyelik kontrol
       const mem = await pool.query(
         `select 1
          from conversation_members
@@ -276,8 +312,8 @@ io.on("connection", (socket) => {
 
       socket.to(conversationId).emit("read:updated", {
         conversationId,
-        userId,        // okuyan kişi (peer)
-        lastReadAt     // ✅ DB time
+        userId,
+        lastReadAt
       });
 
     } catch (e) {
@@ -289,12 +325,25 @@ io.on("connection", (socket) => {
   // -------------------------
   // DISCONNECT
   // -------------------------
-  socket.on("disconnect", () => {
+  socket.on("disconnect", async () => {
     console.log("❌ Disconnected:", { userId, username });
+
+    onlineUsers.delete(userId);
+
+    try {
+      await pool.query(
+        `update users
+       set is_online = false,
+           last_seen = now()
+       where id = $1`,
+        [userId]
+      );
+    } catch (e) {
+      console.error("❌ presence offline update error:", e);
+    }
 
     const leftRooms = removeUserFromAllRooms(userId);
 
-    // ✅ typing payload artık conversationId
     for (const roomId of leftRooms) {
       socket.to(roomId).emit("typing", {
         conversationId: roomId,
@@ -303,6 +352,13 @@ io.on("connection", (socket) => {
         isTyping: false
       });
     }
+
+    // ✅ aktif konuşmalara offline bildir
+    socket.broadcast.emit("presence:update", {
+      userId,
+      isOnline: false,
+      lastSeen: new Date().toISOString()
+    });
   });
 });
 

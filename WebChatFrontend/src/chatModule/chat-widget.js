@@ -24,6 +24,9 @@ function initChatWidget() {
   let searchMode = "inbox"; // "inbox" | "users"
   let USER_RESULTS = [];    // {id, username}
 
+  let typingTimer = null;
+  let isTyping = false;
+
   const required = { fab, peoplePanel, chatPanel, closePeople, closeChat, backBtn, list, search, nameEl, avatarEl, subEl, messagesEl, form, textInput };
   const missing = Object.entries(required).filter(([_, v]) => !v).map(([k]) => k);
   if (missing.length) {
@@ -70,6 +73,13 @@ function initChatWidget() {
     peoplePanel.setAttribute("aria-hidden", "true");
     chatPanel.classList.remove("open");
     chatPanel.setAttribute("aria-hidden", "true");
+
+    if (socket && currentConversationId && isTyping) {
+      isTyping = false;
+      clearTimeout(typingTimer);
+      socket.emit("typing:stop", { conversationId: currentConversationId });
+    }
+    subEl.textContent = "";
   }
 
   function fmtTime(iso) {
@@ -85,11 +95,18 @@ function initChatWidget() {
     list.innerHTML = filtered.map(c => `
     <button class="cw-item" data-peer="${c.peerId}">
       <div class="cw-av">${initials(c.peerUsername)}</div>
+
       <div class="cw-meta">
-        <div class="n">${escapeHtml(c.peerUsername)}</div>
+        <div class="cw-top">
+          <div class="n">${escapeHtml(c.peerUsername)}</div>
+
+          ${c.unreadCount > 0 ? `<span class="cw-badge">${c.unreadCount}</span>` : ""}
+        </div>
+
         <div class="p">${escapeHtml(c.lastMessage || "")}</div>
       </div>
-      <div style="margin-left:auto;font-size:12px;opacity:.65;">
+
+      <div class="cw-time">
         ${fmtTime(c.lastSentAt)}
       </div>
     </button>
@@ -141,6 +158,36 @@ function initChatWidget() {
     socket.on("message:new", ({ conversationId, message }) => {
       if (conversationId !== currentConversationId) return;
       appendMessage(message);
+    });
+
+    socket.on("conversation:read:ok", () => loadConversations().catch(console.error));
+
+    socket.on("message:new", ({ conversationId, message }) => {
+      if (conversationId === currentConversationId) {
+        socket.emit("conversation:read", { conversationId });
+
+        console.log("✅ Okundu olarak işaretlendi:", conversationId);
+      }
+    });
+
+    let typingClearTimer = null;
+
+    socket.on("typing", ({ conversationId, userId, username, isTyping }) => {
+      if (conversationId !== currentConversationId) return;
+
+      // karşı taraf yazıyorsa göster
+      if (isTyping) {
+        subEl.textContent = `${username} yazıyor...`;
+
+        // güvenlik: stop gelmezse 2sn sonra otomatik temizle
+        clearTimeout(typingClearTimer);
+        typingClearTimer = setTimeout(() => {
+          subEl.textContent = "";
+        }, 2000);
+
+      } else {
+        subEl.textContent = "";
+      }
     });
   }
 
@@ -224,6 +271,13 @@ function initChatWidget() {
     if (!currentConversationId) {
       return;
     }
+
+    if (isTyping) {
+      isTyping = false;
+      clearTimeout(typingTimer);
+      socket.emit("typing:stop", { conversationId: currentConversationId });
+    }
+
     socket.emit("message:send", { conversationId: currentConversationId, text: value });
     textInput.value = "";
   });
@@ -241,6 +295,24 @@ function initChatWidget() {
   closeChat.addEventListener("click", (e) => { e.stopPropagation(); closeAll(); });
   backBtn.addEventListener("click", (e) => { e.stopPropagation(); openPeople(); });
   let searchTimer = null;
+
+  textInput.addEventListener("input", () => {
+    if (!socket || !currentConversationId) return;
+
+    // ilk kez yazmaya başladıysa start gönder
+    if (!isTyping) {
+      isTyping = true;
+      socket.emit("typing:start", { conversationId: currentConversationId });
+    }
+
+    // her inputta stop timer reset
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(() => {
+      if (!isTyping) return;
+      isTyping = false;
+      socket.emit("typing:stop", { conversationId: currentConversationId });
+    }, 600);
+  });
 
   search.addEventListener("input", (e) => {
     const q = e.target.value.trim();
@@ -263,6 +335,8 @@ function initChatWidget() {
     socket.on("dm:state", ({ conversationId, history }) => {
       currentConversationId = conversationId;
       renderHistory(history || []);
+
+      socket.emit("conversation:read", { conversationId });
     });
   }
 

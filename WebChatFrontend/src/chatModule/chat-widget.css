@@ -224,3 +224,30 @@
         width: min(92vw, 360px);
     }
 }
+
+.cw-top{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.cw-time{
+  margin-left:auto;
+  font-size:12px;
+  opacity:.65;
+  white-space:nowrap;
+}
+
+.cw-badge{
+  min-width:22px;
+  height:22px;
+  padding:0 7px;
+  border-radius:999px;
+  background:#0aa64b;
+  color:#fff;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:12px;
+  font-weight:800;
+}

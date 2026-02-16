@@ -36,7 +36,7 @@ io.use(socketAuthMiddleware);
 io.on("connection", (socket) => {
   // ✅ Normalize user (JWT payload: { userId, username })
   const u = socket.data.user || {};
-  const userId = u.userId || u.id;        
+  const userId = u.userId || u.id;
   const username = u.username;
 
   if (!userId || !username) {
@@ -211,8 +211,12 @@ io.on("connection", (socket) => {
 
   socket.on("typing:start", ({ conversationId }) => {
     if (!conversationId) return;
+
+    const u = socket.data.user || {};
+    const userId = u.userId || u.id;
+    const username = u.username;
+
     if (!socket.rooms.has(conversationId)) return;
-    if (!canSendTyping(conversationId)) return;
 
     socket.to(conversationId).emit("typing", {
       conversationId,
@@ -224,8 +228,12 @@ io.on("connection", (socket) => {
 
   socket.on("typing:stop", ({ conversationId }) => {
     if (!conversationId) return;
+
+    const u = socket.data.user || {};
+    const userId = u.userId || u.id;
+    const username = u.username;
+
     if (!socket.rooms.has(conversationId)) return;
-    if (!canSendTyping(conversationId)) return;
 
     socket.to(conversationId).emit("typing", {
       conversationId,
@@ -248,6 +256,28 @@ io.on("connection", (socket) => {
         isTyping: false
       });
     }
+  });
+
+  socket.on("conversation:read", async ({ conversationId }) => {
+    if (!conversationId) return;
+
+    const u = socket.data.user || {};
+    const userId = u.userId || u.id;
+
+    const mem = await pool.query(
+      `select 1 from conversation_members where conversation_id=$1 and user_id=$2`,
+      [conversationId, userId]
+    );
+    if (!mem.rowCount) return;
+
+    await pool.query(
+      `update conversation_members
+     set last_read_at = now()
+     where conversation_id=$1 and user_id=$2`,
+      [conversationId, userId]
+    );
+
+    socket.emit("conversation:read:ok", { conversationId });
   });
 });
 

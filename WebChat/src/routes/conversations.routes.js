@@ -34,8 +34,9 @@ router.get("/conversations", httpAuth, async (req, res) => {
     ) lm on true
 
     where cm_me.user_id = $1
-      and c.type = 'DM'
-    order by lm.sent_at desc nulls last, c.created_at desc
+  and c.type = 'DM'
+  and lm.sent_at is not null
+order by lm.sent_at desc, c.created_at desc
     `,
     [me]
   );

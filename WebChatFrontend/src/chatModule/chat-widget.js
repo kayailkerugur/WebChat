@@ -21,6 +21,9 @@ function initChatWidget() {
   const form = document.getElementById("cwForm");
   const textInput = document.getElementById("cwText");
 
+  let searchMode = "inbox"; // "inbox" | "users"
+  let USER_RESULTS = [];    // {id, username}
+
   const required = { fab, peoplePanel, chatPanel, closePeople, closeChat, backBtn, list, search, nameEl, avatarEl, subEl, messagesEl, form, textInput };
   const missing = Object.entries(required).filter(([_, v]) => !v).map(([k]) => k);
   if (missing.length) {
@@ -93,7 +96,7 @@ function initChatWidget() {
   `).join("");
 
     list.querySelectorAll(".cw-item").forEach(btn => {
-      btn.addEventListener("click", () => openChat(btn.dataset.peer));
+      btn.addEventListener("click", () => openChatFromInbox(btn.dataset.peer));
     });
   }
 
@@ -141,7 +144,7 @@ function initChatWidget() {
     });
   }
 
-  function openChat(peerId) {
+  function openChatFromInbox(peerId) {
     const c = INBOX.find(x => x.peerId === peerId);
     if (!c) return;
 
@@ -160,6 +163,58 @@ function initChatWidget() {
     messagesEl.innerHTML = `<div class="cw-msg them">Yükleniyor...</div>`;
 
     socket.emit("dm:open", { peerId });
+  }
+
+  function openChatNew(peerId, peerUsername) {
+    currentPeerId = peerId;
+
+    nameEl.textContent = peerUsername || "Kullanıcı";
+    avatarEl.textContent = initials(peerUsername || "U");
+    subEl.textContent = "";
+
+    peoplePanel.classList.remove("open");
+    peoplePanel.setAttribute("aria-hidden", "true");
+    chatPanel.classList.add("open");
+    chatPanel.setAttribute("aria-hidden", "false");
+
+    messagesEl.innerHTML = `<div class="cw-msg them">Yükleniyor...</div>`;
+
+    // ✅ Yeni DM başlat
+    socket.emit("dm:open", { peerId });
+  }
+
+  async function searchUsers(q) {
+    const res = await fetch(`${API_BASE}/users/search?q=${encodeURIComponent(q)}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error("user search failed");
+
+    const data = await res.json();
+    USER_RESULTS = data.users || [];
+    renderUserResults(USER_RESULTS);
+  }
+
+  function renderUserResults(arr) {
+    if (!arr.length) {
+      list.innerHTML = `<div style="padding:12px;opacity:.7">Kullanıcı bulunamadı</div>`;
+      return;
+    }
+
+    list.innerHTML = arr.map(u => `
+  <button class="cw-item" data-peer="${u.id}" data-username="${escapeHtml(u.username)}">
+    <div class="cw-av">${initials(u.username)}</div>
+    <div class="cw-meta">
+      <div class="n">${escapeHtml(u.username)}</div>
+      <div class="p">Yeni sohbet başlat</div>
+    </div>
+  </button>
+`).join("");
+
+    list.querySelectorAll(".cw-item").forEach(btn => {
+      btn.addEventListener("click", () => {
+        openChatNew(btn.dataset.peer, btn.dataset.username);
+      });
+    });
   }
 
   form.addEventListener("submit", (e) => {
@@ -185,8 +240,26 @@ function initChatWidget() {
   closePeople.addEventListener("click", (e) => { e.stopPropagation(); closeAll(); });
   closeChat.addEventListener("click", (e) => { e.stopPropagation(); closeAll(); });
   backBtn.addEventListener("click", (e) => { e.stopPropagation(); openPeople(); });
-  search.addEventListener("input", (e) => renderInbox(e.target.value));
-  function wireDmState() {
+  let searchTimer = null;
+
+  search.addEventListener("input", (e) => {
+    const q = e.target.value.trim();
+
+    // boşsa inbox filter
+    if (!q) {
+      searchMode = "inbox";
+      renderInbox("");
+      return;
+    }
+
+    // yazı varsa user search
+    searchMode = "users";
+
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      searchUsers(q).catch(console.error);
+    }, 250);
+  }); function wireDmState() {
     socket.on("dm:state", ({ conversationId, history }) => {
       currentConversationId = conversationId;
       renderHistory(history || []);

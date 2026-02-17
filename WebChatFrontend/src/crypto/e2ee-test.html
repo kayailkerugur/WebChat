@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+
+<body>
+    <button id="run">Run initE2EEIdentity</button>
+
+    <script type="module">
+        import { initE2EEIdentity } from "./initE2EEIdentity.js";
+
+        document.getElementById("run").onclick = async () => {
+            try {
+                const out = await initE2EEIdentity({ password: "mySecretPassword", deviceId: "web-1" });
+                console.log("OK:", out);
+                alert("OK, console'a bak");
+            } catch (e) {
+                console.error(e);
+                alert("ERR: " + e.message);
+            }
+        };
+    </script>
+</body>
+
+</html>

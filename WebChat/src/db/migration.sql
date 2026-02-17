@@ -59,3 +59,16 @@ create table if not exists message_deletions (
 
 create index if not exists idx_msg_del_user_conv
   on message_deletions (user_id, message_id);
+
+-- E2EE public keys table
+create table if not exists e2ee_public_keys (
+  user_id uuid not null references users(id) on delete cascade,
+  device_id text not null,
+  sign_pub_jwk jsonb not null,
+  dh_pub_jwk jsonb not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (user_id, device_id)
+);
+
+create index if not exists idx_e2ee_keys_user on e2ee_public_keys(user_id);

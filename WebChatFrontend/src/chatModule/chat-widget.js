@@ -1,4 +1,8 @@
+import { getConversationAesKey } from "../crypto/initE2EEIdentity.js";
+import { encryptMessage, decryptMessage } from "../crypto/encryption.js";
+
 function initChatWidget() {
+
   const API_BASE = "http://localhost:3000";
 
   const root = document.getElementById("cw");
@@ -401,6 +405,22 @@ function initChatWidget() {
     openChatUI(peerUsername);
 
     socket.emit("dm:open", { peerId });
+  }
+
+  async function registerMyKeys({ deviceId, signKeyPair, dhKeyPair, token }) {
+    const { signPubJwk, dhPubJwk } = await exportPublicJwks({ signKeyPair, dhKeyPair });
+
+    const res = await fetch("http://localhost:3000/api/e2ee/keys/register", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ deviceId, signPubJwk, dhPubJwk })
+    });
+
+    if (!res.ok) throw new Error("register failed");
+    return res.json();
   }
 
   // Socket connect

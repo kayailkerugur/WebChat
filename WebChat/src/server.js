@@ -72,6 +72,7 @@ io.on("connection", (socket) => {
     isOnline: true,
     lastSeen: null
   });
+
   // -------------------------
   // ROOM EVENTS (opsiyonel / legacy)
   // -------------------------
@@ -304,7 +305,6 @@ io.on("connection", (socket) => {
       );
       if (!mem.rowCount) return;
 
-      // ✅ DB zamanını al
       const upd = await pool.query(
         `update conversation_members
        set last_read_at = now()
@@ -516,5 +516,7 @@ app.use("/auth", require("./routes/auth.routes"));
 app.use("/", require("./routes/users.routes"));
 
 app.use("/", require("./routes/conversations.routes"));
+
+app.use("/", require("./routes/e2ee.js"));
 
 module.exports = { io };

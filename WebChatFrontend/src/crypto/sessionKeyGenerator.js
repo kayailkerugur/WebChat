@@ -1,17 +1,21 @@
 const te = new TextEncoder();
 
+function normalizedInfo(conversationId, myUserId, theirUserId) {
+    const [a, b] = [String(myUserId), String(theirUserId)].sort();
+    return `e2ee-chat|v1|${conversationId}|${a}|${b}`;
+}
+
 async function importEcdhPublicKeyFromJwk(dhPubJwk) {
     return crypto.subtle.importKey(
         "jwk",
         dhPubJwk,
         { name: "ECDH", namedCurve: "P-256" },
         false,
-        []
+        [] // ✅ ECDH public key için doğru kullanım
     );
 }
 
 async function deriveSharedSecretBits(myDhPrivateKey, theirDhPublicKey) {
-    // 256-bit shared secret bits
     return crypto.subtle.deriveBits(
         { name: "ECDH", public: theirDhPublicKey },
         myDhPrivateKey,
@@ -42,8 +46,6 @@ async function hkdfToAesKey(sharedSecretBits, saltBytes, infoStr) {
     );
 }
 
-// conversationId: iki kişi arasındaki chat id (ör: "userA:userB" gibi deterministik)
-// myUserId / theirUserId: info string için
 export async function getConversationAesKey({
     myDhPrivateKey,
     theirDhPubJwk,
@@ -51,21 +53,18 @@ export async function getConversationAesKey({
     myUserId,
     theirUserId
 }) {
-    // 1) karşı taraf public key import
-    const theirPub = await importEcdhPublicKeyFromJwk(theirDhPubJwk);
+    if (!myDhPrivateKey) throw new Error("myDhPrivateKey missing");
+    if (!theirDhPubJwk) throw new Error("theirDhPubJwk missing");
+    if (!conversationId) throw new Error("conversationId missing");
 
-    // 2) ECDH shared secret
+    const theirPub = await importEcdhPublicKeyFromJwk(theirDhPubJwk);
     const sharedBits = await deriveSharedSecretBits(myDhPrivateKey, theirPub);
 
-    // 3) HKDF salt + info
-    // Salt'ı konuşma bazlı deterministik yapma (random daha iyi).
-    // Burada MVP için conversationId'den salt türetiyoruz; Step 3'te random salt + state tutacağız.
-    const salt = await crypto.subtle.digest("SHA-256", te.encode("salt|" + conversationId));
-    const saltBytes = new Uint8Array(salt);
+    // MVP deterministic salt (prod'da random + state önerilir)
+    const saltBuf = await crypto.subtle.digest("SHA-256", te.encode("salt|" + conversationId));
+    const saltBytes = new Uint8Array(saltBuf);
 
-    const info = `e2ee-chat|v1|${conversationId}|${myUserId}|${theirUserId}`;
+    const info = normalizedInfo(conversationId, myUserId, theirUserId);
 
-    // 4) AES session key
-    const aesKey = await hkdfToAesKey(sharedBits, saltBytes, info);
-    return aesKey;
+    return hkdfToAesKey(sharedBits, saltBytes, info);
 }

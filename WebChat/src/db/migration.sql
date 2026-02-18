@@ -72,3 +72,13 @@ create table if not exists e2ee_public_keys (
 );
 
 create index if not exists idx_e2ee_keys_user on e2ee_public_keys(user_id);
+
+alter table messages
+  add column if not exists e2ee jsonb;
+
+alter table messages
+  alter column body drop not null;
+
+alter table messages
+  add constraint messages_body_or_e2ee_chk
+  check (body is not null or e2ee is not null);

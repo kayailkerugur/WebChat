@@ -180,7 +180,9 @@
         <span id="toastText">Kopyalandı!</span>
     </div>
     <script type="module" src="app.js"></script>
-    <script>
+    <script type="module">
+        import { initChatWidget } from "../chatModule/chat-widget/index.js";
+
         fetch("../chatModule/chat-widget.html")
             .then(r => r.text())
             .then(html => {
@@ -190,7 +192,6 @@
     </script>
 
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-    <script src="../chatModule/chat-widget.js"></script>
 </body>
 
 </html>

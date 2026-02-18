@@ -159,13 +159,21 @@ io.on("connection", (socket) => {
       // history (son 50)
       const hist = await client.query(
         `select * from (
-     select m.id, m.body, m.sent_at, m.deleted_for_all, m.deleted_at,
-            u.id as sender_id, u.username
+     select
+       m.id,
+       m.body,
+       m.e2ee,
+       m.sent_at,
+       m.deleted_for_all,
+       m.deleted_at,
+       u.id as sender_id,
+       u.username
      from messages m
      join users u on u.id = m.sender_id
      where m.conversation_id = $1
        and not exists (
-         select 1 from message_deletions d
+         select 1
+         from message_deletions d
          where d.message_id = m.id
            and d.user_id = $2
        )
@@ -193,6 +201,7 @@ io.on("connection", (socket) => {
 
       socket.emit("dm:state", {
         conversationId,
+        myUserId: userId,
         peerLastReadAt,
         presence: {
           isOnline,
@@ -200,10 +209,11 @@ io.on("connection", (socket) => {
         },
         history: hist.rows.map(r => ({
           id: r.id,
-          text: r.deleted_for_all ? "Mesaj silindi" : r.body,
+          text: r.body,                 
+          e2ee: r.e2ee,                 
+          sentAt: r.sent_at,
           deletedForAll: r.deleted_for_all,
           deletedAt: r.deleted_at,
-          sentAt: r.sent_at,
           from: { userId: r.sender_id, username: r.username }
         }))
       });
@@ -225,33 +235,47 @@ io.on("connection", (socket) => {
   // -------------------------
   // MESSAGE SEND (conversationId)
   // -------------------------
-  socket.on("message:send", async ({ conversationId, text }) => {
-    if (!conversationId || !text?.trim()) {
-      return socket.emit("error", { code: "VALIDATION", message: "conversationId and text required" });
+  socket.on("message:send", async ({ conversationId, text, e2ee }) => {
+    if (!conversationId) {
+      return socket.emit("error", { code: "VALIDATION", message: "conversationId required" });
+    }
+
+    const hasPlain = typeof text === "string" && text.trim().length > 0;
+
+    const hasE2EE =
+      e2ee &&
+      typeof e2ee === "object" &&
+      typeof e2ee.ct_b64 === "string" &&
+      typeof e2ee.iv_b64 === "string";
+
+    if (!hasPlain && !hasE2EE) {
+      return socket.emit("error", { code: "VALIDATION", message: "text or e2ee required" });
     }
 
     try {
       const mem = await pool.query(
-        `select 1
-         from conversation_members
-         where conversation_id=$1 and user_id=$2`,
+        `select 1 from conversation_members where conversation_id=$1 and user_id=$2`,
         [conversationId, userId]
       );
       if (!mem.rowCount) {
         return socket.emit("error", { code: "FORBIDDEN", message: "not a member" });
       }
 
+      const bodyToStore = hasPlain ? text.trim() : null;
+      const e2eeToStore = hasE2EE ? e2ee : null;
+
       const ins = await pool.query(
-        `insert into messages (conversation_id, sender_id, body)
-         values ($1,$2,$3)
-         returning id, sent_at`,
-        [conversationId, userId, text.trim()]
+        `insert into messages (conversation_id, sender_id, body, e2ee)
+       values ($1,$2,$3,$4)
+       returning id, sent_at, e2ee`,
+        [conversationId, userId, bodyToStore, e2eeToStore]
       );
 
       const message = {
         id: ins.rows[0].id,
         conversationId,
-        text: text.trim(),
+        text: bodyToStore,        // dev/test için kalabilir
+        e2ee: ins.rows[0].e2ee,   // ✅ db’den dönen
         sentAt: ins.rows[0].sent_at,
         from: { userId, username }
       };

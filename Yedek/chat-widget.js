@@ -1,7 +1,8 @@
-import { getConversationAesKey } from "../crypto/initE2EEIdentity.js";
-import { encryptMessage, decryptMessage } from "../crypto/encryption.js";
+import { initE2EEIdentity } from "../crypto/initE2EEIdentity.js";   // Step 1 (IndexedDB)
+import { getConversationAesKey } from "../crypto/sessionKeyGenerator.js";     // Step 2 (ECDH+HKDF)
+import { encryptMessage, decryptMessage } from "../crypto/encryption.js"; // Step 3 (AES-GCM)
 
-function initChatWidget() {
+export function initChatWidget() {
 
   const API_BASE = "http://localhost:3000";
 
@@ -43,6 +44,57 @@ function initChatWidget() {
   if (!token || !me || !myId) {
     console.warn("jwt_token / me_user yok. Önce select-user.html ile login ol.");
     return;
+  }
+
+  // ---------------------------
+  // E2EE STATE (Step 1-2-3)
+  // ---------------------------
+  let identity = null;           // { deviceId, pub, priv, isNew }
+  let myDeviceId = localStorage.getItem("e2ee_device_id") || "web-1";
+  localStorage.setItem("e2ee_device_id", myDeviceId);
+
+  let aesKey = null;             // active conversation key
+  const peerKeyCache = new Map();// peerId -> { userId, deviceId, signPubJwk, dhPubJwk, updatedAt }
+
+  async function ensureIdentity() {
+
+    identity = await initE2EEIdentity({ password: "123456", deviceId: myDeviceId });
+
+    // İlk kez üretildiyse public key'leri register et
+    if (identity.isNew) {
+      const res = await fetch(`${API_BASE}/api/e2ee/keys/register`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          deviceId: identity.deviceId,
+          signPubJwk: identity.pub.signPubJwk,
+          dhPubJwk: identity.pub.dhPubJwk
+        })
+      });
+
+      if (!res.ok) throw new Error("E2EE key register failed");
+      await res.json();
+    }
+  }
+
+  async function getPeerKeys(peerId) {
+    if (peerKeyCache.has(peerId)) return peerKeyCache.get(peerId);
+
+    const res = await fetch(`${API_BASE}/api/e2ee/keys/${peerId}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (!res.ok) throw new Error("peer keys fetch failed");
+    const data = await res.json();
+
+    const best = (data.keys || [])[0]; // MVP: ilk device
+    if (!best?.dhPubJwk) throw new Error("peer dhPubJwk missing");
+
+    peerKeyCache.set(peerId, best);
+    return best;
   }
 
   // State
@@ -320,7 +372,6 @@ function initChatWidget() {
     menu.style.left = `${x}px`;
     menu.style.top = `${y}px`;
 
-    // Benim için sil (her zaman)
     const delMe = document.createElement("button");
     delMe.innerHTML = `Benim için sil <span class="muted">(sadece sende)</span>`;
     delMe.onclick = () => {
@@ -329,7 +380,6 @@ function initChatWidget() {
     };
     menu.appendChild(delMe);
 
-    // Herkes için sil (sadece benim mesajımda)
     if (isMine) {
       const delAll = document.createElement("button");
       delAll.className = "danger";
@@ -343,7 +393,6 @@ function initChatWidget() {
 
     document.body.appendChild(menu);
 
-    // ekran dışına taşmasın
     const r = menu.getBoundingClientRect();
     let nx = x, ny = y;
     if (r.right > window.innerWidth) nx = window.innerWidth - r.width - 8;
@@ -353,6 +402,7 @@ function initChatWidget() {
 
     ctxMenuEl = menu;
   }
+
   // API: conversations
   async function loadConversations() {
     const res = await fetch(`${API_BASE}/conversations`, {
@@ -382,6 +432,8 @@ function initChatWidget() {
   function resetChatStateBeforeOpen(peerId) {
     currentPeerId = peerId;
     currentConversationId = null;
+    aesKey = null; // konuşma değişti → key sıfırla
+
     peerLastReadAt = null;
     peerPresence = { isOnline: false, lastSeen: null };
     currentHistory = [];
@@ -407,21 +459,56 @@ function initChatWidget() {
     socket.emit("dm:open", { peerId });
   }
 
-  async function registerMyKeys({ deviceId, signKeyPair, dhKeyPair, token }) {
-    const { signPubJwk, dhPubJwk } = await exportPublicJwks({ signKeyPair, dhKeyPair });
+  const aesKeyByConv = new Map(); // cacheKey -> CryptoKey
 
-    const res = await fetch("http://localhost:3000/api/e2ee/keys/register", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`
-      },
-      body: JSON.stringify({ deviceId, signPubJwk, dhPubJwk })
+  function keyCacheId(conversationId, peerId) {
+    return `${conversationId}:${myId}:${peerId}`;
+  }
+
+  async function ensureConversationKeyFor(conversationId) {
+    if (aesKeyByConv.has(conversationId))
+      return aesKeyByConv.get(conversationId);
+
+    const peerKeys = await getPeerKeys(currentPeerId);
+
+    const key = await getConversationAesKey({
+      myDhPrivateKey: identity.priv.dhPrivateKey,
+      theirDhPubJwk: peerKeys.dhPubJwk,
+      conversationId,
+      myUserId: myId,
+      theirUserId: currentPeerId
     });
 
-    if (!res.ok) throw new Error("register failed");
-    return res.json();
+    aesKeyByConv.set(conversationId, key);
+    return key;
   }
+
+  // const aesKeyByConv = new Map(); // cacheKey -> CryptoKey
+
+  // function keyCacheId(conversationId, peerId) {
+  //   return `${conversationId}:${myId}:${peerId}`;
+  // }
+
+  // async function ensureConversationKeyFor(conversationId, peerId) {
+  //   if (!identity?.priv?.dhPrivateKey) throw new Error("identity not ready");
+  //   if (!conversationId) throw new Error("conversationId missing");
+  //   if (!peerId) throw new Error("peerId missing");
+
+  //   const cacheKey = keyCacheId(conversationId, peerId);
+  //   if (aesKeyByConv.has(cacheKey)) return aesKeyByConv.get(cacheKey);
+
+  //   const peerKeys = await getPeerKeys(peerId); // ✅ dhPubJwk buradan geliyor
+  //   const key = await getConversationAesKey({
+  //     myDhPrivateKey: identity.priv.dhPrivateKey,
+  //     theirDhPubJwk: peerKeys.dhPubJwk,
+  //     conversationId,
+  //     myUserId: myId,
+  //     theirUserId: peerId
+  //   });
+
+  //   aesKeyByConv.set(cacheKey, key);
+  //   return key;
+  // }
 
   // Socket connect
   function connectSocket() {
@@ -438,31 +525,78 @@ function initChatWidget() {
     socket.on("conversation:read:ok", () => loadConversations().catch(console.error));
 
     // dm state
-    socket.on("dm:state", ({ conversationId, history, peerLastReadAt, presence }) => {
-      currentConversationId = conversationId;
-      peerLastReadAt = peerLastReadAt || null;
+    socket.on("dm:state", async ({ conversationId, history, myUserId, peerLastReadAt: pla, presence }) => {
+      try {
+        currentConversationId = conversationId;
+        peerLastReadAt = pla || null;
 
-      currentHistory = history || [];
-      renderHistory(currentHistory);
-      updateReadTicks();
+        const decryptedHistory = [];
 
-      peerPresence = {
-        isOnline: !!presence?.isOnline,
-        lastSeen: presence?.lastSeen || null
-      };
-      renderPresence();
+        for (const m of (history || [])) {
+          try {
+            if (m?.deletedForAll) {
+              decryptedHistory.push({ ...m, text: "Mesaj silindi" });
+              continue;
+            }
 
-      socket.emit("conversation:read", { conversationId });
+            if (m?.e2ee?.ct_b64 && m?.e2ee?.iv_b64) {
+              const senderId = m?.from?.userId;
+
+              // ✅ peerId hesapla (DM varsayımı)
+              // Eğer mesajı ben attıysam peer = currentPeerId
+              // Eğer mesajı o attıysa peer = sender
+              const peerId = (senderId === myUserId) ? currentPeerId : senderId;
+
+              const aesKey = await ensureConversationKeyFor(conversationId, peerId);
+              const plain = await decryptMessage(aesKey, m.e2ee);
+
+              decryptedHistory.push({ ...m, text: plain });
+            } else {
+              decryptedHistory.push(m);
+            }
+          } catch (e) {
+            console.error("decrypt fail for msg", m?.id, e, m?.e2ee);
+            decryptedHistory.push({ ...m, text: "🔒 Şifreli mesaj (çözülemedi)" });
+          }
+        }
+
+        currentHistory = decryptedHistory;
+        renderHistory(currentHistory);
+        updateReadTicks();
+
+        peerPresence = { isOnline: !!presence?.isOnline, lastSeen: presence?.lastSeen || null };
+        renderPresence();
+
+        socket.emit("conversation:read", { conversationId });
+      } catch (err) {
+        console.error("dm:state decrypt failed:", err);
+        messagesEl.innerHTML = `<div class="cw-msg them">Mesajlar çözülemedi (E2EE)</div>`;
+      }
     });
 
     // new message
-    socket.on("message:new", ({ conversationId, message }) => {
+    socket.on("message:new", async ({ conversationId, message }) => {
       if (conversationId !== currentConversationId) return;
 
-      currentHistory.push(message);
-      appendMessage(message);
+      let uiMsg = message;
 
-      const fromId = message?.from?.userId;
+      try {
+        if (message?.deletedForAll) {
+          uiMsg = { ...message, text: "Mesaj silindi" };
+        } else if (message?.e2ee?.ct_b64 && message?.e2ee?.iv_b64) {
+          const aesKey = await ensureConversationKeyFor(conversationId, message?.e2ee?.senderId || currentPeerId);
+          const plain = await decryptMessage(aesKey, message.e2ee);
+          uiMsg = { ...message, text: plain };
+        }
+      } catch (e) {
+        console.error("incoming decrypt failed:", e);
+        if (message?.e2ee) uiMsg = { ...message, text: "🔒 Şifreli mesaj (çözülemedi)" };
+      }
+
+      currentHistory.push(uiMsg);
+      appendMessage(uiMsg);
+
+      const fromId = uiMsg?.from?.userId;
       if (fromId && fromId !== myId) {
         socket.emit("conversation:read", { conversationId });
       }
@@ -522,23 +656,42 @@ function initChatWidget() {
     });
   }
 
-  // Submit message
-  form.addEventListener("submit", (e) => {
-    e.preventDefault();
 
+
+  // Submit message (E2EE)
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
     const value = textInput.value.trim();
     if (!value) return;
     if (!socket || !currentConversationId) return;
 
-    // typing stop
     if (isTyping) {
       isTyping = false;
       clearTimeout(typingTimer);
       socket.emit("typing:stop", { conversationId: currentConversationId });
     }
 
-    socket.emit("message:send", { conversationId: currentConversationId, text: value });
-    textInput.value = "";
+    try {
+      const aesKey = await ensureConversationKeyFor(currentConversationId, currentPeerId);
+
+      const e2eePacket = await encryptMessage(
+        aesKey,
+        {
+          conversationId: currentConversationId,
+          senderId: myId,
+          receiverId: currentPeerId,
+          sentAt: new Date().toISOString(),
+          messageId: crypto.randomUUID()
+        },
+        value
+      );
+
+      socket.emit("message:send", { conversationId: currentConversationId, e2ee: e2eePacket });
+      textInput.value = "";
+    } catch (err) {
+      console.error("send encrypt failed:", err);
+      alert("Mesaj şifrelenemedi (E2EE).");
+    }
   });
 
   // Typing emit
@@ -578,7 +731,6 @@ function initChatWidget() {
 
   // Click handling
   root.addEventListener("click", (e) => e.stopPropagation());
-  // document.addEventListener("click", closeAll);
 
   fab.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -590,13 +742,17 @@ function initChatWidget() {
   closePeople.addEventListener("click", (e) => { e.stopPropagation(); closeAll(); });
   closeChat.addEventListener("click", (e) => { e.stopPropagation(); closeAll(); });
   backBtn.addEventListener("click", (e) => { e.stopPropagation(); openPeople(); });
-  // document.addEventListener("click", () => closeCtxMenu());
+
   window.addEventListener("scroll", () => closeCtxMenu(), { passive: true });
   window.addEventListener("resize", () => closeCtxMenu());
 
-  // start
-  connectSocket();
-  loadConversations().catch(console.error);
+  // ---------------------------
+  // START (E2EE → sonra socket)
+  // ---------------------------
+  ensureIdentity()
+    .then(() => {
+      connectSocket();
+    })
 }
 
 document.addEventListener("DOMContentLoaded", () => {

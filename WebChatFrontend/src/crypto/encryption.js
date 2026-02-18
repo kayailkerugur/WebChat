@@ -1,3 +1,4 @@
+// encryption.js
 const AES = "AES-GCM";
 const IV_LEN = 12;
 
@@ -5,95 +6,101 @@ const te = new TextEncoder();
 const td = new TextDecoder();
 
 function randBytes(n) {
-    const x = new Uint8Array(n);
-    crypto.getRandomValues(x);
-    return x;
+  const x = new Uint8Array(n);
+  crypto.getRandomValues(x);
+  return x;
 }
 
+// Uint8Array -> base64
 function b64(bytes) {
-    let bin = "";
-    const chunk = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunk) {
-        bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
-    }
-    return btoa(bin);
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
 }
 
+// base64 -> Uint8Array
 function unb64(s) {
-    const bin = atob(s);
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-    return out;
+  const bin = atob(s);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
 }
 
 /**
- * AAD (Additional Authenticated Data):
- * Şifrelenmez ama "doğrulanır". Paket metadata'sı değişirse decrypt patlar.
- * Bu sayede biri senderId/timestamp gibi alanları oynarsa mesaj bozulur.
+ * AAD: encrypt/decrypt tarafında BİREBİR aynı olmalı.
+ * Burada sadece kesin stabil alanları kullanıyoruz.
  */
-function buildAAD({ conversationId, senderId, receiverId, sentAt, messageId }) {
-    const aadObj = { v: 1, conversationId, senderId, receiverId, sentAt, messageId };
-    return te.encode(JSON.stringify(aadObj));
+function buildAAD(packetOrMeta) {
+  const aadObj = {
+    v: 1,
+    conversationId: packetOrMeta.conversationId,
+    messageId: packetOrMeta.messageId,
+    senderId: packetOrMeta.senderId,
+    receiverId: packetOrMeta.receiverId
+  };
+  return te.encode(JSON.stringify(aadObj));
 }
 
 /**
- * Encrypt message payload
- * @param {CryptoKey} aesKey - Step 2'den gelen conversation/session key
- * @param {object} meta - konuşma + kimlik metaları
- * @param {string} plaintext - mesaj metni
+ * Encrypt
+ * meta: { conversationId, messageId, senderId, receiverId, sentAt? }
  */
 export async function encryptMessage(aesKey, meta, plaintext) {
-    const iv = randBytes(IV_LEN);
-    const aad = buildAAD(meta);
+  if (!aesKey) throw new Error("aesKey missing");
+  if (!meta?.conversationId || !meta?.messageId || !meta?.senderId || !meta?.receiverId) {
+    throw new Error("meta missing fields (conversationId,messageId,senderId,receiverId)");
+  }
 
-    const ptBytes = te.encode(plaintext);
+  const iv = randBytes(IV_LEN);
+  const aad = buildAAD(meta);
+  const ptBytes = te.encode(String(plaintext ?? ""));
 
-    const ctBuf = await crypto.subtle.encrypt(
-        { name: AES, iv, additionalData: aad, tagLength: 128 },
-        aesKey,
-        ptBytes
-    );
+  const ctBuf = await crypto.subtle.encrypt(
+    { name: AES, iv, additionalData: aad, tagLength: 128 },
+    aesKey,
+    ptBytes
+  );
 
-    const ct = new Uint8Array(ctBuf);
+  const ct = new Uint8Array(ctBuf);
 
-    // Sunucuya gidecek wire format (JSON)
-    return {
-        v: 1,
-        conversationId: meta.conversationId,
-        messageId: meta.messageId,
-        senderId: meta.senderId,
-        receiverId: meta.receiverId,
-        sentAt: meta.sentAt, // ISO string öneririm
-        alg: "AES-256-GCM",
-        iv_b64: b64(iv),
-        ct_b64: b64(ct),
-        // aad ayrı taşınmayabilir; meta zaten var. Ama decrypt için aynı AAD'yi yeniden üretmelisin.
-    };
+  return {
+    v: 1,
+    alg: "AES-256-GCM",
+    conversationId: meta.conversationId,
+    messageId: meta.messageId,
+    senderId: meta.senderId,
+    receiverId: meta.receiverId,
+    sentAt: meta.sentAt || new Date().toISOString(), // UI için
+    iv_b64: b64(iv),
+    ct_b64: b64(ct)
+  };
 }
 
 /**
- * Decrypt message payload
- * @param {CryptoKey} aesKey - Step 2'den gelen aynı key
- * @param {object} packet - server'dan gelen şifreli mesaj paketi
+ * Decrypt
+ * packet: encryptMessage çıktısı (server’dan geldiği gibi)
  */
 export async function decryptMessage(aesKey, packet) {
-    const meta = {
-        conversationId: packet.conversationId,
-        senderId: packet.senderId,
-        receiverId: packet.receiverId,
-        sentAt: packet.sentAt,
-        messageId: packet.messageId,
-    };
+  if (!aesKey) throw new Error("aesKey missing");
+  if (!packet?.conversationId || !packet?.messageId || !packet?.senderId || !packet?.receiverId) {
+    throw new Error("packet missing fields (conversationId,messageId,senderId,receiverId)");
+  }
+  if (!packet?.iv_b64 || !packet?.ct_b64) {
+    throw new Error("packet missing iv_b64/ct_b64");
+  }
 
-    const iv = unb64(packet.iv_b64);
-    const ct = unb64(packet.ct_b64);
-    const aad = buildAAD(meta);
+  const iv = unb64(packet.iv_b64);
+  const ct = unb64(packet.ct_b64);
+  const aad = buildAAD(packet);
 
-    const ptBuf = await crypto.subtle.decrypt(
-        { name: AES, iv, additionalData: aad, tagLength: 128 },
-        aesKey,
-        ct
-    );
+  const ptBuf = await crypto.subtle.decrypt(
+    { name: AES, iv, additionalData: aad, tagLength: 128 },
+    aesKey,
+    ct
+  );
 
-    return td.decode(ptBuf);
+  return td.decode(ptBuf);
 }

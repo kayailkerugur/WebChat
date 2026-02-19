@@ -2,7 +2,7 @@ import { loadConversations } from "./api.js";
 import { renderHistory, appendMessage, updateReadTicks } from "./render/messages.js";
 import { renderPresence } from "./render/presence.js";
 
-import { decryptMessage } from "../../crypto/encryption.js";
+import { decryptMessage } from "./crypto/encryption.js";
 import { ensureConversationKeyFor } from "./e2eeKey.js";
 
 export function connectSocket(state) {

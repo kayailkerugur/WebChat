@@ -1,4 +1,4 @@
-import { getConversationAesKey } from "../../crypto/sessionKeyGenerator.js";
+import { getConversationAesKey } from "./crypto/sessionKeyGenerator.js";
 import { fetchPeerKeys } from "./api.js";
 
 const aesKeyByConv = new Map();

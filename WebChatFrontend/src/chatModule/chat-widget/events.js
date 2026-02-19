@@ -4,7 +4,7 @@ import { renderInbox, renderUserResults } from "./render/inbox.js";
 import { renderPresence } from "./render/presence.js";
 import { closeCtxMenu } from "./render/contextMenu.js";
 import { resetChatStateBeforeOpen } from "./state.js";
-import { encryptMessage } from "../../crypto/encryption.js";
+import { encryptMessage } from "./crypto/encryption.js";
 import { ensureConversationKeyFor } from "./e2eeKey.js";
 
 // UI helpers
@@ -163,7 +163,6 @@ export function bindEvents(state) {
     }, 600);
   });
 
-  // submit message (E2EE)
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
 

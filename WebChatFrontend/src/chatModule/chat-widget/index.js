@@ -1,8 +1,7 @@
-// src/chatModule/index.js
 import { createState } from "./state.js";
 import { bindEvents } from "./events.js";
 import { connectSocket } from "./socket.js";
-import { initE2EEIdentity } from "../../crypto/initE2EEIdentity.js";
+import { initE2EEIdentity } from "./crypto/initE2EEIdentity.js";
 import { registerMyKeys } from "./api.js";
 
 function getEls() {

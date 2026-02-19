@@ -1,3 +1,5 @@
+import { getEncryptedIdentityRecord, setEncryptedIdentityRecord, initE2EEIdentity } from "./crypto/initE2EEIdentity.js";
+
 export async function loadConversations(state) {
     const res = await fetch(`${state.API_BASE}/conversations`, {
         headers: { Authorization: `Bearer ${state.token}` }
@@ -57,4 +59,65 @@ export async function fetchPeerKeys(state, peerId) {
 
     state.peerKeyCache.set(peerId, best);
     return best;
+}
+
+export async function registerKeysToServer({ state, token, identity }) {
+    const record = await getEncryptedIdentityRecord(); // <-- kdf+enc buradan
+
+    if (!record?.kdf || !record?.enc) {
+        throw new Error("LOCAL_IDENTITY_RECORD_MISSING_FOR_BACKUP");
+    }
+
+    const res = await fetch(`${state.API_BASE}/api/e2ee/keys/register`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+            deviceId: identity.deviceId,
+            signPubJwk: identity.pub.signPubJwk,
+            dhPubJwk: identity.pub.dhPubJwk,
+            kdf: record?.kdf,
+            wrappedPriv: record?.enc
+        })
+    });
+
+    if (!res.ok) throw new Error("E2EE key register failed");
+    return res.json();
+}
+
+export async function restoreIdentityFromServer({ state, token, deviceId }) {
+    const res = await fetch(`${state.API_BASE}/api/e2ee/keys/me?deviceId=${encodeURIComponent(deviceId)}`, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (!res.ok) return false; // sunucuda yoksa restore yok
+    const data = await res.json();
+
+    const kdf = data?.key?.kdf;
+    const wrappedPriv = data?.key?.wrappedPriv;
+
+    if (!kdf || !wrappedPriv) return false;
+
+    // IDB record formatına çevir
+    const record = {
+        v: 1,
+        deviceId,
+        kdf,
+        enc: wrappedPriv,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+    };
+
+    await setEncryptedIdentityRecord(record);
+    return true;
+}
+
+export async function ensureIdentityWithRestore({ state, token, deviceId, pin }) {
+    // IDB boşsa restore dene
+    await restoreIdentityFromServer({ state, token, deviceId });
+
+    // artık init aynı key’i decrypt eder
+    return initE2EEIdentity({ password: pin, deviceId });
 }

@@ -82,3 +82,13 @@ alter table messages
 alter table messages
   add constraint messages_body_or_e2ee_chk
   check (body is not null or e2ee is not null);
+
+alter table e2ee_public_keys
+  add column if not exists wrapped_priv jsonb,
+  add column if not exists kdf jsonb;
+
+create index if not exists idx_e2ee_keys_user_device
+  on e2ee_public_keys(user_id, device_id);
+
+create index if not exists idx_e2ee_keys_user_updated
+  on e2ee_public_keys(user_id, updated_at desc);

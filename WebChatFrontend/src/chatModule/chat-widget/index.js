@@ -1,8 +1,7 @@
 import { createState } from "./state.js";
 import { bindEvents } from "./events.js";
 import { connectSocket } from "./socket.js";
-import { initE2EEIdentity } from "./crypto/initE2EEIdentity.js";
-import { registerMyKeys } from "./api.js";
+import { registerKeysToServer, ensureIdentityWithRestore } from "./api.js";
 
 function getEls() {
     const root = document.getElementById("cw");
@@ -36,15 +35,23 @@ function getEls() {
 }
 
 async function ensureIdentityAndRegister(state) {
-    state.identity = await initE2EEIdentity({
-        password: "123456",
-        deviceId: state.myDeviceId
+    const pin = "123456";
+    const token = state.token;
+
+    state.identity = await ensureIdentityWithRestore({
+        state,
+        token,
+        deviceId: state.myDeviceId,
+        pin
     });
 
     console.log("Identity ready:", state.identity);
-    if (state.identity?.isNew) {
-        await registerMyKeys(state);
-    }
+
+    await registerKeysToServer({
+        state,
+        token,
+        identity: state.identity
+    });
 }
 
 export async function initChatWidget() {

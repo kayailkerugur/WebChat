@@ -296,3 +296,27 @@ export async function initE2EEIdentity({ password, deviceId }) {
     isNew: true,
   };
 }
+export async function getEncryptedIdentityRecord() {
+  // identity_v1 kaydını raw haliyle döndürür: { v, deviceId, kdf, enc, createdAt, updatedAt }
+  const record = await idbGet(RECORD_KEY);
+  return record ?? null;
+}
+
+export async function setEncryptedIdentityRecord(record) {
+  // server’dan çektiğin record’u IDB’ye yazmak için
+  if (!record || record.v !== 1) throw new Error("E2EE_IDENTITY_INVALID_RECORD");
+  if (!record.kdf?.salt_b64 || !record.enc?.iv_b64 || !record.enc?.ct_b64) {
+    throw new Error("E2EE_IDENTITY_INVALID_RECORD_FIELDS");
+  }
+
+  // updatedAt yoksa ekleyelim
+  const now = new Date().toISOString();
+  const safe = {
+    ...record,
+    updatedAt: record.updatedAt || now,
+    createdAt: record.createdAt || now,
+  };
+
+  await idbPut(RECORD_KEY, safe);
+  return true;
+}

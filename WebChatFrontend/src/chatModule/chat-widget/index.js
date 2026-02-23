@@ -45,8 +45,6 @@ async function ensureIdentityAndRegister(state) {
         pin
     });
 
-    console.log("Identity ready:", state.identity);
-
     await registerKeysToServer({
         state,
         token,

@@ -44,15 +44,12 @@ export async function registerMyKeys(state) {
 export async function fetchPeerKeys(state, peerId) {
     if (state.peerKeyCache.has(peerId)) return state.peerKeyCache.get(peerId);
 
-    console.log(state.token)
     const res = await fetch(`${state.API_BASE}/api/e2ee/keys/${peerId}`, {
         headers: { Authorization: `Bearer ${state.token}` }
     });
 
     if (!res.ok) throw new Error("peer keys fetch failed");
     const data = await res.json();
-
-    console.log(data)
 
     const best = (data.keys || [])[0];
     if (!best?.dhPubJwk) throw new Error("peer dhPubJwk missing");
@@ -62,8 +59,7 @@ export async function fetchPeerKeys(state, peerId) {
 }
 
 export async function registerKeysToServer({ state, token, identity }) {
-    const record = await getEncryptedIdentityRecord(); // <-- kdf+enc buradan
-
+    const record = await getEncryptedIdentityRecord(); 
     if (!record?.kdf || !record?.enc) {
         throw new Error("LOCAL_IDENTITY_RECORD_MISSING_FOR_BACKUP");
     }
@@ -115,9 +111,8 @@ export async function restoreIdentityFromServer({ state, token, deviceId }) {
 }
 
 export async function ensureIdentityWithRestore({ state, token, deviceId, pin }) {
-    // IDB boşsa restore dene
+
     await restoreIdentityFromServer({ state, token, deviceId });
 
-    // artık init aynı key’i decrypt eder
     return initE2EEIdentity({ password: pin, deviceId });
 }

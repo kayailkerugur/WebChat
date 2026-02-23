@@ -26,7 +26,6 @@ create table if not exists messages (
   id uuid primary key default uuid_generate_v4(),
   conversation_id uuid not null references conversations(id) on delete cascade,
   sender_id uuid not null references users(id) on delete cascade,
-  body text not null,
   sent_at timestamptz not null default now()
 );
 
@@ -77,11 +76,8 @@ alter table messages
   add column if not exists e2ee jsonb;
 
 alter table messages
-  alter column body drop not null;
-
-alter table messages
   add constraint messages_body_or_e2ee_chk
-  check (body is not null or e2ee is not null);
+  check (e2ee is not null);
 
 alter table e2ee_public_keys
   add column if not exists wrapped_priv jsonb,

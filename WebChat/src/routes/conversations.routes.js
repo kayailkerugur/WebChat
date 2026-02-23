@@ -12,7 +12,6 @@ router.get("/conversations", httpAuth, async (req, res) => {
   c.id as "conversationId",
   u.id as "peerId",
   u.username as "peerUsername",
-  lm.body as "lastMessage",
   lm.sent_at as "lastSentAt",
   coalesce(unr.unread_count, 0) as "unreadCount"
 from conversation_members cm_me
@@ -25,7 +24,7 @@ join conversation_members cm_peer
 join users u on u.id = cm_peer.user_id
 
 left join lateral (
-  select m.body, m.sent_at
+  select m.sent_at
   from messages m
   where m.conversation_id = c.id
   order by m.sent_at desc

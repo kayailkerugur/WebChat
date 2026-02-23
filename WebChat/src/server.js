@@ -161,7 +161,6 @@ io.on("connection", (socket) => {
         `select * from (
      select
        m.id,
-       m.body,
        m.e2ee,
        m.sent_at,
        m.deleted_for_all,
@@ -265,10 +264,10 @@ io.on("connection", (socket) => {
       const e2eeToStore = hasE2EE ? e2ee : null;
 
       const ins = await pool.query(
-        `insert into messages (conversation_id, sender_id, body, e2ee)
-       values ($1,$2,$3,$4)
+        `insert into messages (conversation_id, sender_id, e2ee)
+       values ($1,$2,$3)
        returning id, sent_at, e2ee`,
-        [conversationId, userId, bodyToStore, e2eeToStore]
+        [conversationId, userId, e2eeToStore]
       );
 
       const message = {

@@ -17,7 +17,6 @@ export function connectSocket(state) {
     socket.on("disconnect", () => console.log("❌ socket disconnected"));
     socket.on("error", (e) => console.log("ERR:", e));
 
-    // read ok → inbox refresh
     socket.on("conversation:read:ok", () => loadConversations(state).catch(console.error));
 
     // dm state

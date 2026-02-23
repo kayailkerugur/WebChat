@@ -88,3 +88,9 @@ create index if not exists idx_e2ee_keys_user_device
 
 create index if not exists idx_e2ee_keys_user_updated
   on e2ee_public_keys(user_id, updated_at desc);
+
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS s_user_id INT;
+
+ALTER TABLE users
+ADD CONSTRAINT users_s_user_id_key UNIQUE (s_user_id);

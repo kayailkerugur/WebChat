@@ -2,6 +2,7 @@ import { createState } from "./state.js";
 import { bindEvents } from "./events.js";
 import { connectSocket } from "./socket.js";
 import { registerKeysToServer, ensureIdentityWithRestore } from "./api.js";
+import { idbGet, idbPut, idbDelete } from "./crypto/initE2EEIdentity.js";
 
 function getEls() {
     const root = document.getElementById("cw");
@@ -35,7 +36,13 @@ function getEls() {
 }
 
 async function ensureIdentityAndRegister(state) {
-    const pin = "123456";
+    if (idbGet("user_hash_key") === null) {
+        idbPut("user_hash_key", crypto.randomUUID()).catch(err => {
+            console.error("user_hash_key oluşturulamadı:", err);
+        });
+    }
+
+    const pin = idbGet("user_hash_key");
     const token = state.token;
 
     state.identity = await ensureIdentityWithRestore({

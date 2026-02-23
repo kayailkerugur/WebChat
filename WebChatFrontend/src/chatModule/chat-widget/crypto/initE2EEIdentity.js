@@ -55,7 +55,7 @@ function openDb() {
   });
 }
 
-async function idbGet(key) {
+export async function idbGet(key) {
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, "readonly");
@@ -71,7 +71,7 @@ async function idbGet(key) {
   });
 }
 
-async function idbPut(key, value) {
+export async function idbPut(key, value) {
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, "readwrite");
@@ -87,7 +87,7 @@ async function idbPut(key, value) {
   });
 }
 
-async function idbDelete(key) {
+export async function idbDelete(key) {
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, "readwrite");

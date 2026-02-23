@@ -131,7 +131,7 @@
       if (!res.ok) {
         throw new Error(data?.message || "dev-login failed");
       }
-      return data; // { token, user }
+      return data;
     }
 
     document.getElementById("loginBtn").addEventListener("click", async () => {

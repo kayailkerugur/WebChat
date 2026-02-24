@@ -26,6 +26,24 @@
             </div>
         </header>
 
+        <!-- E2EE PIN Test Panel -->
+        <section class="card input-card" style="margin-top:20px;">
+            <div class="card-head">
+                <h2>E2EE PIN Test</h2>
+            </div>
+
+            <div class="field" style="margin-top:10px;">
+                <span class="label">New PIN</span>
+                <input id="testNewPin" class="textarea" type="text" placeholder="Yeni PIN (örn: 654321)" />
+            </div>
+
+            <div class="btn-row" style="margin-top:15px;">
+                <button class="btn primary" id="btnRotatePin" type="button">
+                    PIN Değiştir (Rotate)
+                </button>
+            </div>
+        </section>
+
         <section class="card input-card">
             <div class="card-head">
                 <h2>Girdi</h2>
@@ -179,6 +197,50 @@
     <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true">
         <span id="toastText">Kopyalandı!</span>
     </div>
+
+    <script type="module">
+        import { onNewPin } from "../chatModule/chat-widget/e2eeKey.js";
+        import { getEncryptedIdentityRecord, setEncryptedIdentityRecord } from "../chatModule/chat-widget/crypto/initE2EEIdentity.js";
+        import { createState } from "../chatModule/chat-widget/state.js";
+
+        document.addEventListener("DOMContentLoaded", () => {
+
+            const btn = document.getElementById("btnRotatePin");
+            if (!btn) return;
+
+            btn.addEventListener("click", async () => {
+                try {
+                    const oldPin = localStorage.getItem("user_hash_key");
+                    const newPin = document.getElementById("testNewPin").value;
+                    
+
+                    if (!oldPin || !newPin) {
+                        alert("Old ve New PIN gerekli");
+                        return;
+                    }
+
+                    if (oldPin && newPin && oldPin !== newPin) {
+                        await onNewPin(oldPin, newPin);
+
+                        // başarılıysa localStorage güncelle
+                        localStorage.setItem("user_hash_key", newPin);
+                        localStorage.removeItem("user_hash_key_new");
+
+                        alert("PIN başarıyla değiştirildi ✅");
+                        console.log("PIN rotate success");
+                    }
+
+                    else {
+                        alert("PIN başarıyla değiştirilmedi");
+                    }
+                } catch (err) {
+                    console.error("Rotate error:", err);
+                    alert("Hata: " + err.message);
+                }
+            });
+
+        });
+    </script>
     <script type="module" src="app.js"></script>
     <script type="module">
         import { initChatWidget } from "../chatModule/chat-widget/index.js";

@@ -233,4 +233,120 @@ router.get("/api/e2ee/keys/:userId", async (req, res) => {
   }
 });
 
+// -------------------------
+// GET /api/e2ee/keys/me?deviceId=...
+// -------------------------
+router.get("/api/e2ee/keys/me", requireAuth, async (req, res) => {
+  const userId = req.user.id;
+  const deviceId = req.query.deviceId;
+
+  if (typeof deviceId !== "string" || deviceId.length < 1 || deviceId.length > 64) {
+    return res.status(400).json({ error: "INVALID_DEVICE_ID" });
+  }
+
+  try {
+    const result = await pool.query(
+      `
+      select 
+        user_id,
+        device_id,
+        sign_pub_jwk,
+        dh_pub_jwk,
+        kdf,
+        wrapped_priv,
+        updated_at
+      from e2ee_public_keys
+      where user_id = $1 and device_id = $2
+      limit 1
+      `,
+      [userId, deviceId]
+    );
+
+    if (!result.rowCount) {
+      return res.status(404).json({ error: "NO_KEYS_FOUND" });
+    }
+
+    const row = result.rows[0];
+
+    return res.json({
+      ok: true,
+      key: {
+        userId: row.user_id,
+        deviceId: row.device_id,
+        signPubJwk: row.sign_pub_jwk,
+        dhPubJwk: row.dh_pub_jwk,
+        kdf: row.kdf,
+        wrappedPriv: row.wrapped_priv,
+        updatedAt: row.updated_at
+      }
+    });
+
+  } catch (err) {
+    console.error("e2ee get me error:", err);
+    return res.status(500).json({ error: "SERVER_ERROR" });
+  }
+});
+
+// -------------------------
+// POST /api/e2ee/keys/change-pin
+// body: { deviceId, kdf, wrappedPriv }
+// -------------------------
+router.post("/api/e2ee/keys/change-pin", requireAuth, express.json(), async (req, res) => {
+  const userId = req.user.id;
+
+  const { deviceId, kdf, wrappedPriv } = req.body ?? {};
+
+  // deviceId validate
+  if (typeof deviceId !== "string" || deviceId.length < 1 || deviceId.length > 64) {
+    return res.status(400).json({ error: "INVALID_DEVICE_ID" });
+  }
+
+  // kdf + wrappedPriv basic validate
+  const isObj = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
+
+  if (!isObj(kdf)) {
+    return res.status(400).json({ error: "INVALID_KDF" });
+  }
+  if (!isObj(wrappedPriv)) {
+    return res.status(400).json({ error: "INVALID_WRAPPED_PRIV" });
+  }
+
+  // minimal alan kontrolü (senin IDB record formatınla uyumlu)
+  if (!isObj(kdf) || typeof kdf.salt_b64 !== "string" || typeof kdf.iter !== "number") {
+    return res.status(400).json({ error: "INVALID_KDF_FORMAT" });
+  }
+  if (!isObj(wrappedPriv) || typeof wrappedPriv.iv_b64 !== "string" || typeof wrappedPriv.ct_b64 !== "string") {
+    return res.status(400).json({ error: "INVALID_WRAPPED_PRIV_FORMAT" });
+  }
+
+  try {
+    const q = await pool.query(
+      `
+      update e2ee_public_keys
+      set
+        kdf = $3::jsonb,
+        wrapped_priv = $4::jsonb,
+        updated_at = now()
+      where user_id = $1 and device_id = $2
+      returning updated_at
+      `,
+      [userId, deviceId, JSON.stringify(kdf), JSON.stringify(wrappedPriv)]
+    );
+
+    if (!q.rowCount) {
+      return res.status(404).json({ error: "NO_KEYS_FOUND" });
+    }
+
+    return res.json({
+      ok: true,
+      userId,
+      deviceId,
+      updatedAt: q.rows[0].updated_at
+    });
+  } catch (e) {
+    console.error("e2ee change-pin error:", e);
+    return res.status(500).json({ error: "SERVER" });
+  }
+});
+
 module.exports = router;

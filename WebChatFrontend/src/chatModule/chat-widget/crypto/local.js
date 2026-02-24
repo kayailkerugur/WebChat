@@ -2,13 +2,10 @@
 const AES_ALGORITHM = "AES-GCM";
 const SHA_CRYPT = "SHA-256";
 
-// Java'daki IV_LENGTH_ENCRYPT (bytes). AES-GCM için 12 byte önerilir.
 const IV_LENGTH_ENCRYPT = 12;
 
-// Java'daki TAG_LENGTH_ENCRYPT (bytes). WebCrypto'da default 128-bit (16 byte).
 const TAG_LENGTH_ENCRYPT = 16; // 16 bytes = 128-bit
 
-// Java'daki LOCAL_PASSPHRASE
 const LOCAL_PASSPHRASE = "YOUR_LOCAL_PASSPHRASE_HERE";
 
 // ======== Helpers ========

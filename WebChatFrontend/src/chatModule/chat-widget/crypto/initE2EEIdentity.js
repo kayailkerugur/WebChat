@@ -105,7 +105,6 @@ export async function idbDelete(key) {
 
 // ---------- KDF + AES-GCM ----------
 async function deriveKekFromPassword(password, salt) {
-  // KEK = private key’leri şifrelemek için türetilen anahtar
   const baseKey = await crypto.subtle.importKey(
     "raw",
     te.encode(password),
@@ -136,7 +135,6 @@ async function aesGcmDecrypt(kek, iv, ctBytes) {
 
 // ---------- Key generation ----------
 async function generateIdentityKeyPairs() {
-  // Signing key pair (ECDSA)
   const signKeyPair = await crypto.subtle.generateKey(
     { name: "ECDSA", namedCurve: "P-256" },
     true,
@@ -224,7 +222,6 @@ async function loadDecryptedIdentityRecord(password) {
     const ptBytes = await aesGcmDecrypt(kek, iv, ct);
     return JSON.parse(td.decode(ptBytes));
   } catch (e) {
-    // Yanlış PIN / bozuk kayıt => AES-GCM auth fail genelde OperationError
     if (e?.name === "OperationError") {
       throw new Error("E2EE_PIN_INVALID_OR_RECORD_CORRUPTED");
     }
@@ -261,8 +258,6 @@ export async function initE2EEIdentity({ password, deviceId }) {
     existing = await loadDecryptedIdentityRecord(pw);
   } catch (e) {
     if (String(e?.message) === "E2EE_PIN_INVALID_OR_RECORD_CORRUPTED") {
-      // kayıt bozuk / pin yanlış gibi durumlarda reset stratejisi:
-      // İstersen burada kullanıcıdan onay aldırabilirsin.
       await idbDelete(RECORD_KEY);
       existing = null;
     } else {
@@ -280,7 +275,6 @@ export async function initE2EEIdentity({ password, deviceId }) {
     };
   }
 
-  // Yeni identity
   const pairs = await generateIdentityKeyPairs();
   const pubJwks = await exportPublicJwks(pairs);
   const privJwks = await exportPrivateJwks(pairs);
@@ -296,8 +290,33 @@ export async function initE2EEIdentity({ password, deviceId }) {
     isNew: true,
   };
 }
+
+export async function rewrapIdentity({ oldPin, newPin }) {
+  const oldPw = String(oldPin ?? "").normalize("NFKC");
+  const newPw = String(newPin ?? "").normalize("NFKC");
+  if (!oldPw) throw new Error("OLD_PIN_REQUIRED");
+  if (!newPw) throw new Error("NEW_PIN_REQUIRED");
+  if (oldPw === newPw) {
+    const record = await getEncryptedIdentityRecord();
+    return record;
+  }
+
+  const existing = await loadDecryptedIdentityRecord(oldPw);
+  if (!existing?.privJwks || !existing?.pubJwks) {
+    throw new Error("IDENTITY_RECORD_MISSING");
+  }
+
+  await storeEncryptedIdentityRecord({
+    password: newPw,
+    deviceId: existing.deviceId,
+    privJwks: existing.privJwks,
+    pubJwks: existing.pubJwks
+  });
+
+  return getEncryptedIdentityRecord();
+}
+
 export async function getEncryptedIdentityRecord() {
-  // identity_v1 kaydını raw haliyle döndürür: { v, deviceId, kdf, enc, createdAt, updatedAt }
   const record = await idbGet(RECORD_KEY);
   return record ?? null;
 }

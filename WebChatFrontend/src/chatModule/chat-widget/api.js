@@ -116,3 +116,32 @@ export async function ensureIdentityWithRestore({ state, token, deviceId, pin })
 
     return initE2EEIdentity({ password: pin, deviceId });
 }
+
+// api.js
+export async function changePinOnServer({ state, deviceId, kdf, wrappedPriv }) {
+  const res = await fetch(`${state.API_BASE}/api/e2ee/keys/change-pin`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${state.token}`
+    },
+    body: JSON.stringify({ deviceId, kdf, wrappedPriv })
+  });
+
+  if (!res.ok) throw new Error("CHANGE_PIN_FAILED");
+  return res.json();
+}
+
+// api.js
+export async function fetchMyWrappedKey({ state, deviceId }) {
+  const res = await fetch(
+    `${state.API_BASE}/api/e2ee/keys/me?deviceId=${encodeURIComponent(deviceId)}`,
+    { headers: { Authorization: `Bearer ${state.token}` } }
+  );
+
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error("FETCH_MY_KEYS_FAILED");
+
+  const data = await res.json();
+  return data?.key ?? null; 
+}

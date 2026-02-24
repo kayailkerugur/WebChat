@@ -134,11 +134,9 @@ io.on("connection", (socket) => {
       const isOnline = peerPresence.rows[0]?.is_online;
       const lastSeen = peerPresence.rows[0]?.last_seen;
 
-      // conversation var mı?
       const q = await client.query(`select id from conversations where dm_key=$1`, [key]);
       let conversationId = q.rows[0]?.id;
 
-      // yoksa oluştur + members ekle
       if (!conversationId) {
         const ins = await client.query(
           `insert into conversations (type, dm_key)

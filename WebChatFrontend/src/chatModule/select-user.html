@@ -141,7 +141,6 @@
       try {
         const data = await devLogin(username);
 
-        // ✅ Widget’ın kullanacağı anahtarlar
         localStorage.setItem("jwt_token", data.token);
         localStorage.setItem("me_user", JSON.stringify(data.user));
 

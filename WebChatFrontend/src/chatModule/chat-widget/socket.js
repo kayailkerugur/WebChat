@@ -20,8 +20,6 @@ export function connectSocket(state) {
 
     socket.on("conversation:read:ok", () => loadConversations(state).catch(console.error));
 
-    let printedFp = false;
-
     // dm state
     socket.on("dm:state", async ({ conversationId, history, myUserId, peerLastReadAt, presence }) => {
         try {
@@ -53,12 +51,6 @@ export function connectSocket(state) {
                         decryptedHistory.push(m);
                     }
                 } catch (e) {
-                    if (!printedFp) {
-                        printedFp = true;
-                        console.log("MY dh_pub fp (during decrypt fail):", await jwkFp(state.identity.pub.dhPubJwk));
-                        console.log("MY deviceId:", state.myDeviceId);
-                        console.log("MY userId:", state.myId);
-                    }
                     console.error("decrypt fail for msg", m?.id, e);
                     decryptedHistory.push({ ...m, text: "🔒 Şifreli mesaj (çözülemedi)" });
                 }

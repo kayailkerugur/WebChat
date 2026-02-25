@@ -64,8 +64,6 @@ async function ensureIdentityAndRegister(state, pin) {
     if (!serverKey) {
         await registerKeysToServer({ state, identity: state.identity });
     }
-
-    console.log("MY dh_pub fp:", await jwkFp(state.identity.pub.dhPubJwk));
 }
 
 export async function initChatWidget() {

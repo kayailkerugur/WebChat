@@ -2,12 +2,12 @@
 
 ## 📸 Preview
 
-<div style="display: flex; gap: 16px; overflow-x: auto;">
+## Preview
 
-  <img src="images/1.png" />
-  <img src="images/2.png" />
-  <img src="images/3.png" />
-
+<div style="display:flex; gap:12px; overflow-x:auto; padding:8px 0;">
+  <a href="images/1.png"><img src="images/1.png" alt="Preview 1"  style="border-radius:12px;" /></a>
+  <a href="images/2.png"><img src="images/2.png" alt="Preview 2"  style="border-radius:12px;" /></a>
+  <a href="images/3.png"><img src="images/3.png" alt="Preview 3"  style="border-radius:12px;" /></a>
 </div>
 
 ## Description

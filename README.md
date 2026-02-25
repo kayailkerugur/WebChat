@@ -269,3 +269,8 @@ This project does NOT protect against:
 	•	Web Crypto API powered
 	•	Database-safe encrypted storage
 	•	Production-ready security architecture
+
+## Image
+![1](images/1.png)
+![2](images/2.png)
+![3](images/3.png)

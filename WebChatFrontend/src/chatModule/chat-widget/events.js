@@ -201,6 +201,11 @@ export function bindEvents(state) {
       renderPresence(state);
     } catch (err) {
       console.error("send encrypt failed:", err);
+      if (String(err?.message) === "PEER_E2EE_NOT_READY") {
+        alert("Karşı taraf E2EE'yi kurmamış (keys/register yapılmamış).");
+        return;
+      }
+      throw err;
       alert("Mesaj şifrelenemedi (E2EE).");
     }
   });

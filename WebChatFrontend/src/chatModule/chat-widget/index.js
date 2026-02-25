@@ -1,7 +1,10 @@
 import { createState } from "./state.js";
 import { bindEvents } from "./events.js";
 import { connectSocket } from "./socket.js";
-import { registerKeysToServer, ensureIdentityWithRestore } from "./api.js";
+import { registerKeysToServer, ensureIdentityWithRestore, fetchMyWrappedKey } from "./api.js";
+import { aesKeyByConv } from "./e2eeKey.js";
+import { jwkFp } from "./crypto/encryption.js";
+import { initE2EEIdentity, getEncryptedIdentityRecord, setEncryptedIdentityRecord } from "./crypto/initE2EEIdentity.js";
 
 function getEls() {
     const root = document.getElementById("cw");
@@ -34,26 +37,35 @@ function getEls() {
     return els;
 }
 
-async function ensureIdentityAndRegister(state) {
-    if (localStorage.getItem("user_hash_key") === null) {
-        localStorage.setItem("user_hash_key", state.myId);
+export async function loadPinFromStorage(state) {
+    return localStorage.getItem(`e2ee_pin:${state.myId}`); // user-scoped
+}
+
+export async function savePinToStorage(state, pin) {
+    localStorage.setItem(`e2ee_pin:${state.myId}`, String(pin));
+}
+
+async function ensureIdentityAndRegister(state, pin) {
+    const serverKey = await fetchMyWrappedKey({ state, deviceId: state.myDeviceId }); // 404 -> null
+
+    if (serverKey?.kdf && serverKey?.wrappedPriv) {
+        await setEncryptedIdentityRecord({
+            v: 1,
+            deviceId: state.myDeviceId,
+            kdf: serverKey.kdf,
+            enc: serverKey.wrappedPriv,
+            createdAt: new Date().toISOString(),
+            updatedAt: serverKey.updatedAt || new Date().toISOString(),
+        });
     }
 
-    const pin = localStorage.getItem("user_hash_key");
-    const token = state.token;
+    state.identity = await initE2EEIdentity({ password: pin, deviceId: state.myDeviceId });
 
-    state.identity = await ensureIdentityWithRestore({
-        state,
-        token,
-        deviceId: state.myDeviceId,
-        pin
-    });
+    if (!serverKey) {
+        await registerKeysToServer({ state, identity: state.identity });
+    }
 
-    await registerKeysToServer({
-        state,
-        token,
-        identity: state.identity
-    });
+    console.log("MY dh_pub fp:", await jwkFp(state.identity.pub.dhPubJwk));
 }
 
 export async function initChatWidget() {
@@ -74,8 +86,11 @@ export async function initChatWidget() {
 
     state.els = els;
 
-    await ensureIdentityAndRegister(state);
+    if (await loadPinFromStorage(state) === null) { 
+        await savePinToStorage(state, "123456");
+    }
 
+    await ensureIdentityAndRegister(state, await loadPinFromStorage(state));
     connectSocket(state);
     bindEvents(state);
 }

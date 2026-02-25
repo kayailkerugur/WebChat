@@ -3,49 +3,63 @@ import { fetchPeerKeys, fetchMyWrappedKey, changePinOnServer } from "./api.js";
 import { initE2EEIdentity, getEncryptedIdentityRecord, setEncryptedIdentityRecord, rewrapIdentity } from "./crypto/initE2EEIdentity.js";
 import { rotateE2EEPin } from "./crypto/rotateE2EEPin.js";
 import { createState } from "./state.js";
+import { savePinToStorage } from "./index.js";
 
-const aesKeyByConv = new Map();
+export const aesKeyByConv = new Map();
 
 export async function ensureConversationKeyFor(state, conversationId, peerId) {
-    if (aesKeyByConv.has(conversationId))
-        return aesKeyByConv.get(conversationId);
+  if (aesKeyByConv.has(conversationId)) return aesKeyByConv.get(conversationId);
 
-    const peerKeys = await fetchPeerKeys(state, peerId);
-    const key = await getConversationAesKey({
-        myDhPrivateKey: state.identity.priv.dhPrivateKey,
-        theirDhPubJwk: peerKeys.dhPubJwk,
-        conversationId,
-        myUserId: state.myId,
-        theirUserId: peerId
-    });
+  const peerKeys = await fetchPeerKeys(state, peerId);
 
-    aesKeyByConv.set(conversationId, key);
-    return key;
+  if (!peerKeys) {
+    throw new Error("PEER_E2EE_NOT_READY");
+  }
+
+  const key = await getConversationAesKey({
+    myDhPrivateKey: state.identity.priv.dhPrivateKey,
+    theirDhPubJwk: peerKeys.dhPubJwk,
+    conversationId,
+    myUserId: state.myId,
+    theirUserId: peerId
+  });
+
+  aesKeyByConv.set(conversationId, key);
+  return key;
 }
 
 export async function ensureIdentityWithRestore({ state, deviceId, pin }) {
-  const localRecord = await getEncryptedIdentityRecord();
-  if (!localRecord) {
-    const serverKey = await fetchMyWrappedKey({ state, deviceId });
-    if (serverKey?.kdf && serverKey?.wrappedPriv) {
-      const record = {
-        v: 1,
-        deviceId,
-        kdf: serverKey.kdf,
-        enc: serverKey.wrappedPriv,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      await setEncryptedIdentityRecord(record);
-    }
+  const local = await getEncryptedIdentityRecord();
+  const serverKey = await fetchMyWrappedKey({ state, deviceId });
+
+  const serverEnc = serverKey?.wrappedPriv ?? serverKey?.wrapped_priv;
+
+  const serverNewer =
+    serverKey?.updatedAt && local?.updatedAt &&
+    new Date(serverKey.updatedAt) > new Date(local.updatedAt);
+
+  if ((!local || serverNewer) && serverKey?.kdf && serverEnc) {
+    await setEncryptedIdentityRecord({
+      v: 1,
+      deviceId,
+      kdf: serverKey.kdf,
+      enc: serverEnc,
+      createdAt: local?.createdAt || new Date().toISOString(),
+      updatedAt: serverKey.updatedAt || new Date().toISOString(),
+    });
   }
-  return initE2EEIdentity({ password: pin, deviceId });
+
+  const ident = await initE2EEIdentity({ password: pin, deviceId });
+
+  aesKeyByConv.clear();
+
+  return ident;
 }
 
 export async function onNewPin(oldPin, newPin) {
   const state = createState();
 
-  await rotateE2EEPin({
+  const result = await rotateE2EEPin({
     state,
     deviceId: state.myDeviceId,
     oldPin,
@@ -53,4 +67,8 @@ export async function onNewPin(oldPin, newPin) {
     getEncryptedIdentityRecord,
     setEncryptedIdentityRecord,
   });
+
+  if (result.ok && !result.skipped) { 
+     savePinToStorage(state, newPin);
+  }
 }

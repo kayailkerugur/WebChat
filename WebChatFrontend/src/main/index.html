@@ -202,6 +202,7 @@
         import { onNewPin } from "../chatModule/chat-widget/e2eeKey.js";
         import { getEncryptedIdentityRecord, setEncryptedIdentityRecord } from "../chatModule/chat-widget/crypto/initE2EEIdentity.js";
         import { createState } from "../chatModule/chat-widget/state.js";
+        import { loadPinFromStorage } from "../chatModule/chat-widget/index.js";
 
         document.addEventListener("DOMContentLoaded", () => {
 
@@ -210,7 +211,7 @@
 
             btn.addEventListener("click", async () => {
                 try {
-                    const oldPin = localStorage.getItem("user_hash_key");
+                    const oldPin = await loadPinFromStorage(createState());
                     const newPin = document.getElementById("testNewPin").value;
                     
 

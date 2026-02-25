@@ -1,8 +1,14 @@
 const te = new TextEncoder();
 
 function normalizedInfo(conversationId, myUserId, theirUserId) {
-    const [a, b] = [String(myUserId), String(theirUserId)].sort();
-    return `e2ee-chat|v1|${conversationId}|${a}|${b}`;
+    const conv = String(conversationId);
+
+    const a = String(myUserId).trim();
+    const b = String(theirUserId).trim();
+
+    const [u1, u2] = a < b ? [a, b] : [b, a];
+
+    return te.encode(`e2ee-dm-v1|${conv}|${u1}|${u2}`);
 }
 
 async function importEcdhPublicKeyFromJwk(dhPubJwk) {
@@ -11,7 +17,7 @@ async function importEcdhPublicKeyFromJwk(dhPubJwk) {
         dhPubJwk,
         { name: "ECDH", namedCurve: "P-256" },
         false,
-        [] // ✅ ECDH public key için doğru kullanım
+        [] 
     );
 }
 
@@ -60,11 +66,10 @@ export async function getConversationAesKey({
     const theirPub = await importEcdhPublicKeyFromJwk(theirDhPubJwk);
     const sharedBits = await deriveSharedSecretBits(myDhPrivateKey, theirPub);
 
-    // MVP deterministic salt (prod'da random + state önerilir)
     const saltBuf = await crypto.subtle.digest("SHA-256", te.encode("salt|" + conversationId));
     const saltBytes = new Uint8Array(saltBuf);
 
     const info = normalizedInfo(conversationId, myUserId, theirUserId);
-
+    
     return hkdfToAesKey(sharedBits, saltBytes, info);
 }

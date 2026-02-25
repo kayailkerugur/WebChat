@@ -91,13 +91,16 @@
 <body>
   <h1>Dev: Authenticated Kullanıcı Seç</h1>
   <p class="muted">
-    Username gir → backend <code>/auth/dev-login</code> → JWT localStorage’a kaydedilir → <code>index.html</code>’e
-    dönülür.
+    Username + PIN gir → backend <code>/auth/dev-login</code> → JWT localStorage’a kaydedilir →
+    E2EE PIN localStorage’a kaydedilir → <code>index.html</code>’e dönülür.
   </p>
 
   <div class="card">
     <label>Username</label>
     <input id="username" placeholder="ör: kaya, ahmet, elif" autocomplete="off" />
+
+    <label>PIN (E2EE)</label>
+    <input id="pin" placeholder="ör: 1234" autocomplete="off" />
 
     <div class="row">
       <button class="primary" id="loginBtn">Giriş Yap</button>
@@ -134,8 +137,13 @@
       return data;
     }
 
+    function pinStorageKey(userId) {
+      return `e2ee_pin:${userId}`;
+    }
+
     document.getElementById("loginBtn").addEventListener("click", async () => {
       const username = document.getElementById("username").value.trim();
+      const pin = document.getElementById("pin").value; // boş olabilir, zorlamıyorum
       if (!username) return alert("username gir");
 
       try {
@@ -144,10 +152,21 @@
         localStorage.setItem("jwt_token", data.token);
         localStorage.setItem("me_user", JSON.stringify(data.user));
 
-        console.log("LOGIN RESPONSE:", data);
-        console.log("TOKEN:", data.token);
+        // ✅ PIN kaydet (user-scoped)
+        const userId = data?.user?.id;
+        if (userId && typeof pin === "string" && pin.length > 0) {
+          localStorage.setItem(pinStorageKey(userId), pin);
+        }
 
-        show({ ok: true, saved: { jwt_token: true, me_user: data.user } });
+        show({
+          ok: true,
+          saved: {
+            jwt_token: true,
+            me_user: data.user,
+            e2ee_pin_saved: !!(userId && pin && pin.length > 0),
+            e2ee_pin_key: userId ? pinStorageKey(userId) : null
+          }
+        });
 
         window.location.href = "../main/index.html";
       } catch (e) {
@@ -160,14 +179,27 @@
     });
 
     document.getElementById("clearBtn").addEventListener("click", () => {
+      // var olan userId varsa onun pinini de sil
+      try {
+        const u = JSON.parse(localStorage.getItem("me_user") || "null");
+        if (u?.id) localStorage.removeItem(pinStorageKey(u.id));
+      } catch { }
+
       localStorage.removeItem("jwt_token");
       localStorage.removeItem("me_user");
-      show("LocalStorage temizlendi: jwt_token, me_user");
+      show("LocalStorage temizlendi: jwt_token, me_user, (varsa) e2ee_pin:<userId>");
     });
 
+    // mevcut user varsa göster + pin varsa inputa doldur
     const existing = localStorage.getItem("me_user");
     if (existing) {
-      try { show({ current: JSON.parse(existing) }); } catch { }
+      try {
+        const u = JSON.parse(existing);
+        const k = u?.id ? pinStorageKey(u.id) : null;
+        const existingPin = k ? localStorage.getItem(k) : null;
+        if (existingPin) document.getElementById("pin").value = existingPin;
+        show({ current: u, pinKey: k, hasPin: !!existingPin });
+      } catch { }
     }
   </script>
 </body>

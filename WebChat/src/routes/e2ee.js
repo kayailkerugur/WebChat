@@ -103,17 +103,15 @@ router.post("/api/e2ee/keys/register", requireAuth, express.json(), async (req, 
   try {
     const q = await pool.query(
       `
-      insert into e2ee_public_keys (user_id, device_id, sign_pub_jwk, dh_pub_jwk, wrapped_priv, kdf)
-      values ($1,$2,$3::jsonb,$4::jsonb,$5::jsonb,$6::jsonb)
-      on conflict (user_id, device_id)
-      do update set
-        sign_pub_jwk = excluded.sign_pub_jwk,
-        dh_pub_jwk   = excluded.dh_pub_jwk,
-        wrapped_priv = excluded.wrapped_priv,
-        kdf          = excluded.kdf,
-        updated_at   = now()
-      returning (xmax = 0) as created, updated_at
-      `,
+  insert into e2ee_public_keys (user_id, device_id, sign_pub_jwk, dh_pub_jwk, wrapped_priv, kdf)
+  values ($1,$2,$3::jsonb,$4::jsonb,$5::jsonb,$6::jsonb)
+  on conflict (user_id, device_id)
+  do update set
+    wrapped_priv = coalesce(excluded.wrapped_priv, e2ee_public_keys.wrapped_priv),
+    kdf          = coalesce(excluded.kdf, e2ee_public_keys.kdf),
+    updated_at   = now()
+  returning (xmax = 0) as created, updated_at
+  `,
       [
         userId,
         deviceId,
@@ -133,102 +131,6 @@ router.post("/api/e2ee/keys/register", requireAuth, express.json(), async (req, 
     });
   } catch (e) {
     console.error("e2ee register error:", e);
-    return res.status(500).json({ error: "SERVER" });
-  }
-});
-
-// -------------------------
-// GET /api/e2ee/keys/me?deviceId=...
-// (kendi device kaydını çekmek için - wrapped_priv + kdf dahil)
-// -------------------------
-router.get("/api/e2ee/keys/me", requireAuth, async (req, res) => {
-  const userId = req.user.id;
-  const deviceId = req.query.deviceId;
-
-  if (typeof deviceId !== "string" || !deviceId) {
-    return res.status(400).json({ error: "INVALID_DEVICE_ID" });
-  }
-
-  try {
-    const r = await pool.query(
-      `
-      select user_id, device_id, sign_pub_jwk, dh_pub_jwk, wrapped_priv, kdf, updated_at
-      from e2ee_public_keys
-      where user_id = $1 and device_id = $2
-      limit 1
-      `,
-      [userId, deviceId]
-    );
-
-    if (!r.rowCount) return res.status(404).json({ error: "NO_KEYS_FOUND" });
-
-    const x = r.rows[0];
-    return res.json({
-      ok: true,
-      key: {
-        userId: x.user_id,
-        deviceId: x.device_id,
-        signPubJwk: x.sign_pub_jwk,
-        dhPubJwk: x.dh_pub_jwk,
-        wrappedPriv: x.wrapped_priv,
-        kdf: x.kdf,
-        updatedAt: x.updated_at
-      }
-    });
-  } catch (e) {
-    console.error("e2ee get me error:", e);
-    return res.status(500).json({ error: "SERVER" });
-  }
-});
-
-// -------------------------
-// GET /api/e2ee/keys/:userId?deviceId=...
-// (peer public key fetch - wrapped_priv DÖNMEZ)
-// -------------------------
-router.get("/api/e2ee/keys/:userId", async (req, res) => {
-  const targetUserId = req.params.userId;
-  const deviceId = req.query.deviceId;
-
-  try {
-    let rows;
-
-    if (deviceId) {
-      const r = await pool.query(
-        `
-        select user_id, device_id, sign_pub_jwk, dh_pub_jwk, updated_at
-        from e2ee_public_keys
-        where user_id = $1 and device_id = $2
-        `,
-        [targetUserId, deviceId]
-      );
-      rows = r.rows;
-    } else {
-      const r = await pool.query(
-        `
-        select user_id, device_id, sign_pub_jwk, dh_pub_jwk, updated_at
-        from e2ee_public_keys
-        where user_id = $1
-        order by updated_at desc
-        `,
-        [targetUserId]
-      );
-      rows = r.rows;
-    }
-
-    if (!rows.length) return res.status(404).json({ error: "NO_KEYS_FOUND" });
-
-    return res.json({
-      ok: true,
-      keys: rows.map(x => ({
-        userId: x.user_id,
-        deviceId: x.device_id,
-        signPubJwk: x.sign_pub_jwk,
-        dhPubJwk: x.dh_pub_jwk,
-        updatedAt: x.updated_at
-      }))
-    });
-  } catch (e) {
-    console.error("e2ee get keys error:", e);
     return res.status(500).json({ error: "SERVER" });
   }
 });
@@ -284,6 +186,61 @@ router.get("/api/e2ee/keys/me", requireAuth, async (req, res) => {
   } catch (err) {
     console.error("e2ee get me error:", err);
     return res.status(500).json({ error: "SERVER_ERROR" });
+  }
+});
+
+// -------------------------
+// GET /api/e2ee/keys/:userId?deviceId=...
+// (peer public key fetch - wrapped_priv DÖNMEZ)
+// -------------------------
+router.get("/api/e2ee/keys/:userId", async (req, res) => {
+  const targetUserId = String(req.params.userId || "").trim();
+
+  const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRe.test(targetUserId)) {
+    return res.status(400).json({ error: "INVALID_USER_ID" });
+  }
+
+  const deviceId = typeof req.query.deviceId === "string" ? req.query.deviceId : null;
+
+  try {
+    let r;
+    if (deviceId) {
+      r = await pool.query(
+        `
+        select user_id, device_id, sign_pub_jwk, dh_pub_jwk, updated_at
+        from e2ee_public_keys
+        where user_id = $1 and device_id = $2
+        `,
+        [targetUserId, deviceId]
+      );
+    } else {
+      r = await pool.query(
+        `
+        select user_id, device_id, sign_pub_jwk, dh_pub_jwk, updated_at
+        from e2ee_public_keys
+        where user_id = $1
+        order by updated_at desc
+        `,
+        [targetUserId]
+      );
+    }
+
+    if (!r.rowCount) return res.status(404).json({ error: "NO_KEYS_FOUND" });
+
+    return res.json({
+      ok: true,
+      keys: r.rows.map(x => ({
+        userId: x.user_id,
+        deviceId: x.device_id,
+        signPubJwk: x.sign_pub_jwk,
+        dhPubJwk: x.dh_pub_jwk,
+        updatedAt: x.updated_at
+      }))
+    });
+  } catch (e) {
+    console.error("e2ee get keys error:", e);
+    return res.status(500).json({ error: "SERVER" });
   }
 });
 

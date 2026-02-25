@@ -4,6 +4,7 @@ import { renderPresence } from "./render/presence.js";
 
 import { decryptMessage } from "./crypto/encryption.js";
 import { ensureConversationKeyFor } from "./e2eeKey.js";
+import { jwkFp } from "./crypto/encryption.js";
 
 export function connectSocket(state) {
     const socket = io(state.API_BASE, {
@@ -18,6 +19,8 @@ export function connectSocket(state) {
     socket.on("error", (e) => console.log("ERR:", e));
 
     socket.on("conversation:read:ok", () => loadConversations(state).catch(console.error));
+
+    let printedFp = false;
 
     // dm state
     socket.on("dm:state", async ({ conversationId, history, myUserId, peerLastReadAt, presence }) => {
@@ -35,10 +38,12 @@ export function connectSocket(state) {
                     }
 
                     if (m?.e2ee?.ct_b64 && m?.e2ee?.iv_b64) {
-                        const senderId = m?.from?.userId;
+                        const senderId = String(m?.from?.userId);
+                        const myId = String(myUserId);
 
-                        // DM varsayımı: mesajı ben attıysam peer=currentPeerId, o attıysa peer=sender
-                        const peerId = (senderId === myUserId) ? state.currentPeerId : senderId;
+                        const peerId = (senderId === myId)
+                            ? String(m?.e2ee?.receiverId)
+                            : senderId;
 
                         const aesKey = await ensureConversationKeyFor(state, conversationId, peerId);
                         const plain = await decryptMessage(aesKey, m.e2ee);
@@ -48,6 +53,12 @@ export function connectSocket(state) {
                         decryptedHistory.push(m);
                     }
                 } catch (e) {
+                    if (!printedFp) {
+                        printedFp = true;
+                        console.log("MY dh_pub fp (during decrypt fail):", await jwkFp(state.identity.pub.dhPubJwk));
+                        console.log("MY deviceId:", state.myDeviceId);
+                        console.log("MY userId:", state.myId);
+                    }
                     console.error("decrypt fail for msg", m?.id, e);
                     decryptedHistory.push({ ...m, text: "🔒 Şifreli mesaj (çözülemedi)" });
                 }
@@ -77,9 +88,8 @@ export function connectSocket(state) {
             if (message?.deletedForAll) {
                 uiMsg = { ...message, text: "Mesaj silindi" };
             } else if (message?.e2ee?.ct_b64 && message?.e2ee?.iv_b64) {
-                // bazen senderId paketten geliyor, yoksa currentPeerId'yi kullan
                 const peerId = message?.e2ee?.senderId || state.currentPeerId;
-                
+
                 const aesKey = await ensureConversationKeyFor(state, conversationId, peerId);
                 const plain = await decryptMessage(aesKey, message.e2ee);
                 uiMsg = { ...message, text: plain };

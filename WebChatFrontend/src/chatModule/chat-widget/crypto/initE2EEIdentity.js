@@ -252,27 +252,19 @@ export async function initE2EEIdentity({ password, deviceId }) {
   const pw = String(password ?? "").normalize("NFKC");
   if (!pw) throw new Error("E2EE_PASSWORD_REQUIRED");
 
-  let existing = null;
-
+  let existing;
   try {
     existing = await loadDecryptedIdentityRecord(pw);
   } catch (e) {
     if (String(e?.message) === "E2EE_PIN_INVALID_OR_RECORD_CORRUPTED") {
-      await idbDelete(RECORD_KEY);
-      existing = null;
-    } else {
-      throw e;
+      throw new Error("E2EE_PIN_INVALID");
     }
+    throw e;
   }
 
   if (existing) {
     const priv = await importKeysFromJwks(existing.privJwks);
-    return {
-      deviceId: existing.deviceId,
-      pub: existing.pubJwks,
-      priv,
-      isNew: false,
-    };
+    return { deviceId: existing.deviceId, pub: existing.pubJwks, priv, isNew: false };
   }
 
   const pairs = await generateIdentityKeyPairs();
@@ -282,13 +274,33 @@ export async function initE2EEIdentity({ password, deviceId }) {
   await storeEncryptedIdentityRecord({ password: pw, deviceId: did, privJwks, pubJwks });
 
   const priv = await importKeysFromJwks(privJwks);
+  return { deviceId: did, pub: pubJwks, priv, isNew: true };
+}
 
-  return {
-    deviceId: did,
-    pub: pubJwks,
-    priv,
-    isNew: true,
-  };
+export async function recoverIdentity({ state, deviceId, pin }) {
+  // 1) local'i temizle
+  await idbDelete(RECORD_KEY_FOR(state.myId, deviceId));
+
+  // 2) server'dan çek (normalize edilmiş)
+  const serverKey = await fetchMyWrappedKey({ state, deviceId });
+  if (!serverKey?.kdf || !(serverKey.wrappedPriv ?? serverKey.wrapped_priv)) {
+    throw new Error("NO_SERVER_IDENTITY");
+  }
+
+  // 3) local'e yaz
+  const enc = serverKey.wrappedPriv ?? serverKey.wrapped_priv;
+  await setEncryptedIdentityRecord(RECORD_KEY_FOR(state.myId, deviceId), {
+    v: 1,
+    userId: state.myId,
+    deviceId,
+    kdf: serverKey.kdf,
+    enc,
+    updatedAt: serverKey.updatedAt ?? serverKey.updated_at ?? new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+  });
+
+  // 4) init
+  return initE2EEIdentity({ password: pin, deviceId });
 }
 
 export async function rewrapIdentity({ oldPin, newPin }) {

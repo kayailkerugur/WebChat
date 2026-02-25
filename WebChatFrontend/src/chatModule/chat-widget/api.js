@@ -48,9 +48,16 @@ export async function fetchPeerKeys(state, peerId) {
         headers: { Authorization: `Bearer ${state.token}` }
     });
 
-    if (!res.ok) throw new Error("peer keys fetch failed");
-    const data = await res.json();
+    if (res.status === 404) {
+        return null;
+    }
 
+    if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        throw new Error(`peer keys fetch failed: ${res.status} ${txt}`);
+    }
+
+    const data = await res.json().catch(() => ({}));
     const best = (data.keys || [])[0];
     if (!best?.dhPubJwk) throw new Error("peer dhPubJwk missing");
 
@@ -58,29 +65,36 @@ export async function fetchPeerKeys(state, peerId) {
     return best;
 }
 
-export async function registerKeysToServer({ state, token, identity }) {
-    const record = await getEncryptedIdentityRecord(); 
+export async function registerKeysToServer({ state, identity }) {
+    const record = await getEncryptedIdentityRecord();
     if (!record?.kdf || !record?.enc) {
         throw new Error("LOCAL_IDENTITY_RECORD_MISSING_FOR_BACKUP");
+    }
+
+    if (record.deviceId && record.deviceId !== identity.deviceId) {
+        throw new Error("LOCAL_RECORD_DEVICE_MISMATCH");
     }
 
     const res = await fetch(`${state.API_BASE}/api/e2ee/keys/register`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`
+            Authorization: `Bearer ${state.token}`,
         },
         body: JSON.stringify({
             deviceId: identity.deviceId,
             signPubJwk: identity.pub.signPubJwk,
             dhPubJwk: identity.pub.dhPubJwk,
-            kdf: record?.kdf,
-            wrappedPriv: record?.enc
-        })
+            kdf: record.kdf,
+            wrappedPriv: record.enc,
+        }),
     });
 
-    if (!res.ok) throw new Error("E2EE key register failed");
-    return res.json();
+    if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        throw new Error(`E2EE_KEY_REGISTER_FAILED:${res.status}:${txt}`);
+    }
+    return res.json().catch(() => ({}));
 }
 
 export async function restoreIdentityFromServer({ state, token, deviceId }) {
@@ -88,7 +102,7 @@ export async function restoreIdentityFromServer({ state, token, deviceId }) {
         headers: { Authorization: `Bearer ${token}` }
     });
 
-    if (!res.ok) return false; // sunucuda yoksa restore yok
+    if (!res.ok) return false; 
     const data = await res.json();
 
     const kdf = data?.key?.kdf;
@@ -96,7 +110,6 @@ export async function restoreIdentityFromServer({ state, token, deviceId }) {
 
     if (!kdf || !wrappedPriv) return false;
 
-    // IDB record formatına çevir
     const record = {
         v: 1,
         deviceId,
@@ -110,38 +123,88 @@ export async function restoreIdentityFromServer({ state, token, deviceId }) {
     return true;
 }
 
-export async function ensureIdentityWithRestore({ state, token, deviceId, pin }) {
+export async function ensureIdentityWithRestore({ state, deviceId, pin }) {
+    const local = await getEncryptedIdentityRecord(); // {kdf, enc,...} bekliyorsun
 
-    await restoreIdentityFromServer({ state, token, deviceId });
+    const serverKeyRaw = await fetchMyWrappedKey({ state, deviceId }); // 404 -> null
 
-    return initE2EEIdentity({ password: pin, deviceId });
+    if (!serverKeyRaw) {
+        if (!local?.kdf || !local?.enc) throw new Error("NO_LOCAL_IDENTITY_RECORD");
+
+        const ident = await initE2EEIdentity({ password: pin, deviceId });
+
+        await registerMyKeysIfMissing({
+            state,
+            deviceId,
+            signPubJwk: ident.pub.signPubJwk, // sende isimler nasıl bilmiyorum
+            dhPubJwk: ident.pub.dhPubJwk,
+            kdf: local.kdf,
+            wrappedPriv: local.enc,
+        });
+
+        aesKeyByConv?.clear?.();
+        return ident;
+    }
+
+    const serverEnc = serverKeyRaw.wrappedPriv ?? serverKeyRaw.wrapped_priv;
+    const serverUpdatedAt = serverKeyRaw.updatedAt ?? serverKeyRaw.updated_at ?? new Date().toISOString();
+
+    if (serverKeyRaw?.kdf && serverEnc) {
+        await setEncryptedIdentityRecord({
+            v: 1,
+            deviceId,
+            kdf: serverKeyRaw.kdf,
+            enc: serverEnc,
+            createdAt: local?.createdAt || new Date().toISOString(),
+            updatedAt: serverUpdatedAt,
+        });
+    }
+
+    const ident = await initE2EEIdentity({ password: pin, deviceId });
+    aesKeyByConv?.clear?.();
+    return ident;
 }
 
 // api.js
 export async function changePinOnServer({ state, deviceId, kdf, wrappedPriv }) {
-  const res = await fetch(`${state.API_BASE}/api/e2ee/keys/change-pin`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${state.token}`
-    },
-    body: JSON.stringify({ deviceId, kdf, wrappedPriv })
-  });
+    const res = await fetch(`${state.API_BASE}/api/e2ee/keys/change-pin`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${state.token}`
+        },
+        body: JSON.stringify({ deviceId, kdf, wrappedPriv })
+    });
 
-  if (!res.ok) throw new Error("CHANGE_PIN_FAILED");
-  return res.json();
+    if (!res.ok) throw new Error("CHANGE_PIN_FAILED");
+    return res.json();
 }
 
 // api.js
 export async function fetchMyWrappedKey({ state, deviceId }) {
-  const res = await fetch(
-    `${state.API_BASE}/api/e2ee/keys/me?deviceId=${encodeURIComponent(deviceId)}`,
-    { headers: { Authorization: `Bearer ${state.token}` } }
-  );
+    const res = await fetch(
+        `${state.API_BASE}/api/e2ee/keys/me?deviceId=${encodeURIComponent(deviceId)}`,
+        { headers: { Authorization: `Bearer ${state.token}` } }
+    );
 
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error("FETCH_MY_KEYS_FAILED");
+    if (res.status === 404) return null;
 
-  const data = await res.json();
-  return data?.key ?? null; 
+    if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        throw new Error(`FETCH_MY_KEYS_FAILED:${res.status}:${txt}`);
+    }
+
+    const data = await res.json().catch(() => null);
+    const key = data?.key;
+    if (!key) return null;
+
+    return {
+        userId: key.userId ?? key.user_id,
+        deviceId: key.deviceId ?? key.device_id,
+        signPubJwk: key.signPubJwk ?? key.sign_pub_jwk,
+        dhPubJwk: key.dhPubJwk ?? key.dh_pub_jwk,
+        kdf: key.kdf,
+        wrappedPriv: key.wrappedPriv ?? key.wrapped_priv,
+        updatedAt: key.updatedAt ?? key.updated_at,
+    };
 }

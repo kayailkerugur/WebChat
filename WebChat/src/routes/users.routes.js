@@ -67,6 +67,18 @@ router.post("/users/register", async (req, res) => {
   }
 });
 
+router.delete("/users/me", httpAuth, async (req, res) => {
+  const me = req.user.userId;
+
+  try {
+    await pool.query(`delete from users where id = $1`, [me]);
+    res.json({ success: true });
+  } catch (e) {
+    console.error("user delete error:", e);
+    res.status(500).json({ error: "SERVER" });
+  }
+});
+
 async function devLogin(username) {
   const res = await fetch(`http://localhost:3000/auth/dev-login`, {
     method: "POST",

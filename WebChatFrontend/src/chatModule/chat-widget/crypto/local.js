@@ -72,7 +72,6 @@ async function localEncrypt(plainText, passphrase = LOCAL_PASSPHRASE) {
 
     const encryptedBytes = new Uint8Array(encryptedBuf);
 
-    // Java: IV + encryptedBytes (encryptedBytes içinde tag sonda bulunur)
     const combined = concatUint8(iv, encryptedBytes);
     return bytesToBase64(combined);
 }

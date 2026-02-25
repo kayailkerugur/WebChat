@@ -29,10 +29,6 @@ function unb64(s) {
   return out;
 }
 
-/**
- * AAD: encrypt/decrypt tarafında BİREBİR aynı olmalı.
- * Burada sadece kesin stabil alanları kullanıyoruz.
- */
 function buildAAD(packetOrMeta) {
   const aadObj = {
     v: 1,
@@ -42,6 +38,11 @@ function buildAAD(packetOrMeta) {
     receiverId: packetOrMeta.receiverId
   };
   return te.encode(JSON.stringify(aadObj));
+}
+
+async function aadFingerprint(aad) {
+  const h = await crypto.subtle.digest("SHA-256", aad);
+  return b64(new Uint8Array(h));
 }
 
 /**
@@ -57,6 +58,8 @@ export async function encryptMessage(aesKey, meta, plaintext) {
   const iv = randBytes(IV_LEN);
   const aad = buildAAD(meta);
   const ptBytes = te.encode(String(plaintext ?? ""));
+
+  console.log("AAD fp encrypt:", await aadFingerprint(aad));
 
   const ctBuf = await crypto.subtle.encrypt(
     { name: AES, iv, additionalData: aad, tagLength: 128 },
@@ -85,22 +88,35 @@ export async function encryptMessage(aesKey, meta, plaintext) {
  */
 export async function decryptMessage(aesKey, packet) {
   if (!aesKey) throw new Error("aesKey missing");
-  if (!packet?.conversationId || !packet?.messageId || !packet?.senderId || !packet?.receiverId) {
-    throw new Error("packet missing fields (conversationId,messageId,senderId,receiverId)");
-  }
-  if (!packet?.iv_b64 || !packet?.ct_b64) {
-    throw new Error("packet missing iv_b64/ct_b64");
-  }
+  if (!packet?.iv_b64 || !packet?.ct_b64) throw new Error("packet missing iv_b64/ct_b64");
 
   const iv = unb64(packet.iv_b64);
   const ct = unb64(packet.ct_b64);
-  const aad = buildAAD(packet);
+
+  try {
+    if (packet?.conversationId && packet?.messageId && packet?.senderId && packet?.receiverId) {
+      const aad = buildAAD(packet);
+      const ptBuf = await crypto.subtle.decrypt(
+        { name: AES, iv, additionalData: aad, tagLength: 128 },
+        aesKey,
+        ct
+      );
+      return td.decode(ptBuf);
+    }
+  } catch (e) {
+    if (e?.name !== "OperationError") throw e;
+  }
 
   const ptBuf = await crypto.subtle.decrypt(
-    { name: AES, iv, additionalData: aad, tagLength: 128 },
+    { name: AES, iv, tagLength: 128 },
     aesKey,
     ct
   );
-
   return td.decode(ptBuf);
+}
+
+export function jwkFp(jwk) {
+    const s = JSON.stringify(jwk);
+    return crypto.subtle.digest("SHA-256", new TextEncoder().encode(s))
+        .then(buf => btoa(String.fromCharCode(...new Uint8Array(buf))));
 }

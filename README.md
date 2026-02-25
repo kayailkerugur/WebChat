@@ -1,5 +1,17 @@
 # 🔐 Web Widget Chat – End-to-End Encrypted Real-Time Messaging
 
+## 📸 Preview
+
+<div style="display: flex; gap: 16px; overflow-x: auto;">
+
+  <img src="images/1.png" />
+  <img src="images/2.png" />
+  <img src="images/3.png" />
+
+</div>
+
+## Description
+
 A secure, real-time web messaging solution that can be embedded into any website as a bottom-right chat widget or message bubble interface.
 
 This project implements End-to-End Encryption (E2EE), ensuring that messages are encrypted on the client and can only be decrypted by the intended recipient. The server never has access to plaintext message content.
@@ -269,8 +281,3 @@ This project does NOT protect against:
 	•	Web Crypto API powered
 	•	Database-safe encrypted storage
 	•	Production-ready security architecture
-
-## Image
-![1](images/1.png)
-![2](images/2.png)
-![3](images/3.png)

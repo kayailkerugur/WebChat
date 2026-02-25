@@ -1,10 +1,8 @@
 import { createState } from "./state.js";
 import { bindEvents } from "./events.js";
 import { connectSocket } from "./socket.js";
-import { registerKeysToServer, ensureIdentityWithRestore, fetchMyWrappedKey } from "./api.js";
-import { aesKeyByConv } from "./e2eeKey.js";
-import { jwkFp } from "./crypto/encryption.js";
-import { initE2EEIdentity, getEncryptedIdentityRecord, setEncryptedIdentityRecord } from "./crypto/initE2EEIdentity.js";
+import { registerKeysToServer, fetchMyWrappedKey } from "./api.js";
+import { initE2EEIdentity, setEncryptedIdentityRecord } from "./crypto/initE2EEIdentity.js";
 
 function getEls() {
     const root = document.getElementById("cw");

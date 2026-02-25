@@ -124,9 +124,9 @@ export async function restoreIdentityFromServer({ state, token, deviceId }) {
 }
 
 export async function ensureIdentityWithRestore({ state, deviceId, pin }) {
-    const local = await getEncryptedIdentityRecord(); // {kdf, enc,...} bekliyorsun
+    const local = await getEncryptedIdentityRecord(); 
 
-    const serverKeyRaw = await fetchMyWrappedKey({ state, deviceId }); // 404 -> null
+    const serverKeyRaw = await fetchMyWrappedKey({ state, deviceId }); 
 
     if (!serverKeyRaw) {
         if (!local?.kdf || !local?.enc) throw new Error("NO_LOCAL_IDENTITY_RECORD");
@@ -136,7 +136,7 @@ export async function ensureIdentityWithRestore({ state, deviceId, pin }) {
         await registerMyKeysIfMissing({
             state,
             deviceId,
-            signPubJwk: ident.pub.signPubJwk, // sende isimler nasıl bilmiyorum
+            signPubJwk: ident.pub.signPubJwk, 
             dhPubJwk: ident.pub.dhPubJwk,
             kdf: local.kdf,
             wrappedPriv: local.enc,

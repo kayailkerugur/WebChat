@@ -59,8 +59,6 @@ export async function encryptMessage(aesKey, meta, plaintext) {
   const aad = buildAAD(meta);
   const ptBytes = te.encode(String(plaintext ?? ""));
 
-  console.log("AAD fp encrypt:", await aadFingerprint(aad));
-
   const ctBuf = await crypto.subtle.encrypt(
     { name: AES, iv, additionalData: aad, tagLength: 128 },
     aesKey,
@@ -84,7 +82,7 @@ export async function encryptMessage(aesKey, meta, plaintext) {
 
 /**
  * Decrypt
- * packet: encryptMessage çıktısı (server’dan geldiği gibi)
+ * packet: encryptMessage
  */
 export async function decryptMessage(aesKey, packet) {
   if (!aesKey) throw new Error("aesKey missing");

@@ -222,11 +222,6 @@
 
                     if (oldPin && newPin && oldPin !== newPin) {
                         await onNewPin(oldPin, newPin);
-
-                        // başarılıysa localStorage güncelle
-                        localStorage.setItem("user_hash_key", newPin);
-                        localStorage.removeItem("user_hash_key_new");
-
                         alert("PIN başarıyla değiştirildi ✅");
                         console.log("PIN rotate success");
                     }

@@ -278,16 +278,13 @@ export async function initE2EEIdentity({ password, deviceId }) {
 }
 
 export async function recoverIdentity({ state, deviceId, pin }) {
-  // 1) local'i temizle
   await idbDelete(RECORD_KEY_FOR(state.myId, deviceId));
 
-  // 2) server'dan çek (normalize edilmiş)
   const serverKey = await fetchMyWrappedKey({ state, deviceId });
   if (!serverKey?.kdf || !(serverKey.wrappedPriv ?? serverKey.wrapped_priv)) {
     throw new Error("NO_SERVER_IDENTITY");
   }
 
-  // 3) local'e yaz
   const enc = serverKey.wrappedPriv ?? serverKey.wrapped_priv;
   await setEncryptedIdentityRecord(RECORD_KEY_FOR(state.myId, deviceId), {
     v: 1,
@@ -299,7 +296,6 @@ export async function recoverIdentity({ state, deviceId, pin }) {
     createdAt: new Date().toISOString(),
   });
 
-  // 4) init
   return initE2EEIdentity({ password: pin, deviceId });
 }
 
@@ -334,13 +330,11 @@ export async function getEncryptedIdentityRecord() {
 }
 
 export async function setEncryptedIdentityRecord(record) {
-  // server’dan çektiğin record’u IDB’ye yazmak için
   if (!record || record.v !== 1) throw new Error("E2EE_IDENTITY_INVALID_RECORD");
   if (!record.kdf?.salt_b64 || !record.enc?.iv_b64 || !record.enc?.ct_b64) {
     throw new Error("E2EE_IDENTITY_INVALID_RECORD_FIELDS");
   }
 
-  // updatedAt yoksa ekleyelim
   const now = new Date().toISOString();
   const safe = {
     ...record,

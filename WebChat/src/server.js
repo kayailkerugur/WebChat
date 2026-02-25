@@ -271,8 +271,8 @@ io.on("connection", (socket) => {
       const message = {
         id: ins.rows[0].id,
         conversationId,
-        text: bodyToStore,        // dev/test için kalabilir
-        e2ee: ins.rows[0].e2ee,   // ✅ db’den dönen
+        text: bodyToStore,       
+        e2ee: ins.rows[0].e2ee,   
         sentAt: ins.rows[0].sent_at,
         from: { userId, username }
       };

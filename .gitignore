@@ -1,8 +1,9 @@
 # node modules
-node_modules/
+WebChat/node_modules/
+WebChatFrontend/node_modules/
 
 # environment variables
-.env
+WebChat/.env
 
 # logs
 logs

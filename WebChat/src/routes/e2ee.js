@@ -85,7 +85,6 @@ router.post("/api/e2ee/keys/register", requireAuth, express.json(), async (req, 
   const errDh = validateP256Jwk(dhPubJwk, null);
   if (errDh) return res.status(400).json({ error: "INVALID_DH_PUB_JWK", detail: errDh });
 
-  // ✅ Private key server-side storage (optional ama gönderdiyse validate)
   if (wrappedPriv !== undefined) {
     const err = validateWrappedPriv(wrappedPriv);
     if (err) return res.status(400).json({ error: "INVALID_WRAPPED_PRIV", detail: err });
@@ -95,7 +94,6 @@ router.post("/api/e2ee/keys/register", requireAuth, express.json(), async (req, 
     if (err) return res.status(400).json({ error: "INVALID_KDF", detail: err });
   }
 
-  // ikisi birlikte gelsin (mantıken paket)
   if ((wrappedPriv && !kdf) || (!wrappedPriv && kdf)) {
     return res.status(400).json({ error: "KDF_AND_WRAPPED_PRIV_REQUIRED_TOGETHER" });
   }
@@ -268,7 +266,6 @@ router.post("/api/e2ee/keys/change-pin", requireAuth, express.json(), async (req
     return res.status(400).json({ error: "INVALID_WRAPPED_PRIV" });
   }
 
-  // minimal alan kontrolü (senin IDB record formatınla uyumlu)
   if (!isObj(kdf) || typeof kdf.salt_b64 !== "string" || typeof kdf.iter !== "number") {
     return res.status(400).json({ error: "INVALID_KDF_FORMAT" });
   }

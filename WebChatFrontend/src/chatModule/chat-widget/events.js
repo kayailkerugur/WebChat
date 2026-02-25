@@ -102,7 +102,6 @@ export function bindEvents(state) {
     form, textInput
   } = state.els;
 
-  // click bubbling kapat
   root.addEventListener("click", (e) => e.stopPropagation());
 
   // fab

@@ -5,7 +5,7 @@ const { pool } = require("../db/db");
 
 router.post("/dev-login", async (req, res) => {
   try {
-    const { username } = req.body;
+    const { username, sUserID } = req.body;
 
     if (!username || !username.trim()) {
       return res.status(400).json({ message: "username required" });
@@ -14,12 +14,15 @@ router.post("/dev-login", async (req, res) => {
     const clean = username.trim();
 
     const up = await pool.query(
-      `insert into users (username)
-       values ($1)
-       on conflict (username) do update set username = excluded.username
-       returning id, username`,
-      [clean]
-    );
+  `insert into users (username, s_user_id)
+   values ($1, $2)
+   on conflict (username)
+   do update set 
+     username = excluded.username,
+     s_user_id = excluded.s_user_id
+   returning id, username, s_user_id`,
+  [clean, sUserID]
+);
 
     const user = up.rows[0];
 
